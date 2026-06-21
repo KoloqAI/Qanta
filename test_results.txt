@@ -1,0 +1,54 @@
+============================= test session starts =============================
+platform win32 -- Python 3.14.5, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\vipkaushik\OneDrive - Apollo Management L.P\Documents\Workspace\Qanta\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\vipkaushik\OneDrive - Apollo Management L.P\Documents\Workspace\Qanta
+configfile: pyproject.toml
+plugins: anyio-4.14.0, langsmith-0.8.18, asyncio-1.4.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 43 items
+
+tests/unit/test_tool_registry.py::test_register_and_get PASSED           [  2%]
+tests/unit/test_tool_registry.py::test_list_by_permission PASSED         [  4%]
+tests/unit/test_tool_registry.py::test_agent_cannot_access_risk_increasing PASSED [  6%]
+tests/unit/test_tool_registry.py::test_deregister PASSED                 [  9%]
+tests/unit/test_m2_gate.py::test_backtest_hand_written_spec PASSED       [ 11%]
+tests/unit/test_m2_gate.py::test_interpreter_produces_valid_signals PASSED [ 13%]
+tests/unit/test_m2_gate.py::test_frictionless_vs_net_edge_reported PASSED [ 16%]
+tests/unit/test_m2_gate.py::test_cost_model_reduces_edge PASSED          [ 18%]
+tests/unit/test_m2_gate.py::test_lookahead_guard_detects_future_bars PASSED [ 20%]
+tests/unit/test_m2_gate.py::test_lookahead_guard_passes_clean_bars PASSED [ 23%]
+tests/unit/test_m2_gate.py::test_provider_enforces_point_in_time PASSED  [ 25%]
+tests/unit/test_m2_gate.py::test_universe_survivorship_free PASSED       [ 27%]
+tests/unit/test_m2_gate.py::test_sma_correctness PASSED                  [ 30%]
+tests/unit/test_m2_gate.py::test_rsi_bounded PASSED                      [ 32%]
+tests/unit/test_m2_gate.py::test_backtest_deterministic PASSED           [ 34%]
+tests/unit/test_m4_gate.py::test_valid_spec_passes PASSED                [ 37%]
+tests/unit/test_m4_gate.py::test_unknown_top_level_field_rejected PASSED [ 39%]
+tests/unit/test_m4_gate.py::test_missing_thesis_rejected PASSED          [ 41%]
+tests/unit/test_m4_gate.py::test_empty_thesis_rejected PASSED            [ 44%]
+tests/unit/test_m4_gate.py::test_empty_regime_rejected PASSED            [ 46%]
+tests/unit/test_m4_gate.py::test_missing_stop_loss_rejected PASSED       [ 48%]
+tests/unit/test_m4_gate.py::test_unknown_condition_operator_rejected PASSED [ 51%]
+tests/unit/test_m4_gate.py::test_unknown_action_rejected PASSED          [ 53%]
+tests/unit/test_m4_gate.py::test_risk_exceeding_guardrails_rejected PASSED [ 55%]
+tests/unit/test_m4_gate.py::test_risk_stop_pct_exceeding_guardrails_rejected PASSED [ 58%]
+tests/unit/test_m4_gate.py::test_risk_gross_exposure_exceeding_guardrails_rejected PASSED [ 60%]
+tests/unit/test_m4_gate.py::test_unknown_exit_type_rejected PASSED       [ 62%]
+tests/unit/test_m4_gate.py::test_unknown_primitive_rejected PASSED       [ 65%]
+tests/unit/test_m4_gate.py::test_primitive_wrong_arity_rejected PASSED   [ 67%]
+tests/unit/test_m4_gate.py::test_primitive_param_out_of_range_rejected PASSED [ 69%]
+tests/unit/test_m4_gate.py::test_primitive_param_above_max_rejected PASSED [ 72%]
+tests/unit/test_m4_gate.py::test_record_field_access_valid PASSED        [ 74%]
+tests/unit/test_m4_gate.py::test_record_field_access_invalid_field PASSED [ 76%]
+tests/unit/test_m4_gate.py::test_condition_gt_wrong_arg_count PASSED     [ 79%]
+tests/unit/test_m4_gate.py::test_condition_between_wrong_arg_count PASSED [ 81%]
+tests/unit/test_m4_gate.py::test_unknown_entry_field_rejected PASSED     [ 83%]
+tests/unit/test_m4_gate.py::test_unknown_sizing_method_rejected PASSED   [ 86%]
+tests/unit/test_m4_gate.py::test_multiple_errors_collected PASSED        [ 88%]
+tests/unit/test_m4_gate.py::test_held_for_condition_validated PASSED     [ 90%]
+tests/unit/test_m4_gate.py::test_held_for_wrong_arity PASSED             [ 93%]
+tests/unit/test_m4_gate.py::test_all_of_requires_list PASSED             [ 95%]
+tests/unit/test_m4_gate.py::test_risk_at_guardrail_boundary_passes PASSED [ 97%]
+tests/unit/test_m4_gate.py::test_valid_spec_runs_through_backtest PASSED [100%]
+
+============================= 43 passed in 3.17s ==============================

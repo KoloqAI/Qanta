@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-paper: #F5F6F4;
+  --color-surface: #FFFFFF;
+  --color-inset: #F2F3F0;
+  --color-ink: #1B2127;
+  --color-muted: #6A7178;
+  --color-faint: #9AA0A4;
+  --color-hairline: #E4E6E2;
+  --color-indigo: #34408B;
+  --color-indigo-soft: #ECEEF7;
+  --color-amber: #B07A1E;
+  --color-gain: #2F6B4F;
+  --color-loss: #9C3B33;
+}
+
+html[data-theme="dark"] {
+  --color-paper: #14171B;
+  --color-surface: #1B2025;
+  --color-inset: #20252B;
+  --color-ink: #E9EBE7;
+  --color-muted: #9AA1A8;
+  --color-faint: #69707A;
+  --color-hairline: #2A3038;
+  --color-indigo: #8A95E0;
+  --color-indigo-soft: #232B45;
+  --color-amber: #D9A441;
+  --color-gain: #5FB088;
+  --color-loss: #D7726A;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]):not([data-theme="dark"]) {
+    --color-paper: #14171B;
+    --color-surface: #1B2025;
+    --color-inset: #20252B;
+    --color-ink: #E9EBE7;
+    --color-muted: #9AA1A8;
+    --color-faint: #69707A;
+    --color-hairline: #2A3038;
+    --color-indigo: #8A95E0;
+    --color-indigo-soft: #232B45;
+    --color-amber: #D9A441;
+    --color-gain: #5FB088;
+    --color-loss: #D7726A;
+  }
+}

@@ -1,0 +1,16 @@
+# Portfolio allocation and risk configuration.
+
+allocation:
+  method: fixed_fraction           # fixed_fraction | inverse_vol | confidence_weighted
+  cash_buffer_pct: 10.0            # minimum cash reserve as % of equity
+  max_strategies: 10               # max simultaneous live deployments
+
+caps:
+  per_symbol_pct: 15.0             # max aggregate exposure to one symbol across strategies
+  per_sector_pct: 30.0             # max aggregate exposure to one sector
+  max_gross_exposure_pct: 100.0    # portfolio-level gross exposure cap
+
+correlation:
+  enabled: false                   # v1: disabled; enable for correlation-aware sizing later
+  lookback_days: 60
+  overlap_threshold: 0.7

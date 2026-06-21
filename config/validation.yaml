@@ -1,0 +1,34 @@
+# Pre-registered validation thresholds — versioned.
+# All gates must pass for a strategy to be considered validated.
+
+version: 1
+
+thresholds:
+  deflated_sharpe_min: 0.95        # DSR must exceed this
+  pbo_max: 0.20                    # PBO must be below this
+  deg_slope_min: 0.0               # degradation slope must be non-negative
+  min_trades: 100                  # minimum number of trades in OOS
+  cost_adjusted_edge_ratio: 0.50   # net edge must be >= 50% of frictionless edge
+  peer_hit_rate_min: 0.60          # fraction of peers where strategy also shows edge
+  confidence_lower_bound_min: 0.10 # C_lo floor for confidence emission
+  suspected_leak_sharpe: 3.0       # Sharpe above this triggers leakage investigation
+
+walk_forward:
+  n_splits: 5
+  embargo_frac: 0.01
+  purge: true
+
+pbo:
+  n_blocks: 10                     # S in CSCV (must be even)
+
+robustness:
+  param_sweep_pct: 20              # +/- range for parameter sensitivity
+  monte_carlo_iterations: 2000
+  monte_carlo_dd_percentile: 95    # report this percentile of max drawdown
+
+confidence:
+  base_rate: 0.50                  # skeptical prior center
+  prior_strength_per_neff: 0.5     # prior strength scaling with n_eff
+
+lockbox:
+  holdout_frac: 0.15               # fraction of data reserved for lockbox

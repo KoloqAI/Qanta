@@ -1,0 +1,39 @@
+# Notification channels and event routing.
+
+channels:
+  email:
+    enabled: false
+    provider: ses
+  telegram:
+    enabled: false
+  sms:
+    enabled: false
+    provider: twilio
+
+severity_routing:
+  critical:                        # kill-switch, broker disconnect, large drawdown
+    channels: [email, telegram, sms]
+  warning:                         # strategy awaiting review, guardrail trip, data degraded
+    channels: [email, telegram]
+  info:                            # deploy/approval, evolution promotion/retirement
+    channels: [email]
+
+quiet_hours:
+  enabled: false
+  start: "22:00"
+  end: "07:00"
+  timezone: America/New_York
+  override_critical: true          # critical alerts ignore quiet hours
+
+events:
+  kill_switch_fired: critical
+  broker_disconnect: critical
+  data_feed_loss: critical
+  large_drawdown: critical
+  strategy_awaiting_review: warning
+  guardrail_trip: warning
+  deploy_started: info
+  approval_granted: info
+  evolution_tier3_proposal: warning
+  evolution_promotion: info
+  evolution_retirement: info

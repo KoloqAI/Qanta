@@ -1,0 +1,29 @@
+---
+description: CRITICAL trading safety — applies to execution, risk, and any order-affecting code
+globs:
+  - "app/modules/execution/**"
+  - "app/modules/risk/**"
+  - "app/core/tools/**"
+alwaysApply: true
+---
+
+# Trading safety (non-negotiable)
+
+Every order, paper or live, passes through M7 `RiskGate.check()` before leaving M6. There is no path
+around M7. Guardrails are enforced in code, not just in config UI.
+
+## Mandatory pre-trade checks (reject + log on violation; never silently clamp)
+1. Per-position stop-loss — no position opens without one.
+2. Max position size (per symbol) and max gross exposure (portfolio) — hard caps.
+3. Daily-drawdown kill-switch — cross the threshold → flatten all positions and HALT until manual reset.
+
+## Hard rules
+- No LLM call anywhere in M6 or M7. Execution and risk are deterministic and fully tested.
+- Live start requires a passing ValidationReport AND an Approval row tied to the exact strategy_version
+  and a user_id. Assert both before the runtime starts.
+- PDT guard: intraday mode + account equity < $25,000 → block live intraday with a clear error; offer swing mode.
+- The assistant may execute read and risk_reducing (pause/flatten/halt) actions; risk_increasing actions
+  (deploy-live/approve/raise-limit/place-order) are staged for human confirm only — never auto-executed.
+- Every signal, order, fill, rejection, kill-switch event, and approval is written to the immutable audit log.
+- Tests MUST include drills proving stop-loss, position cap, gross-exposure cap, and the daily kill-switch fire.
+- Fail closed: when unsure whether an action is safe, reject and log — never fail open.

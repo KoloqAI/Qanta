@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quanta — hi-fi with theme toggle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F6F4; --surface:#FFFFFF; --inset:#F2F3F0; --ink:#1B2127; --muted:#6A7178; --faint:#9AA0A4;
+  --hair:#E4E6E2; --hair2:#EEF0EC; --indigo:#34408B; --indigo-soft:#ECEEF7; --indigo-line:#C9CFEA;
+  --amber:#B07A1E; --amber-soft:#F6EEDD; --amber-line:#E8D8B6; --gain:#2F6B4F; --loss:#9C3B33;
+  --gain-soft:#E8F0EB; --loss-soft:#F4E7E5; --loss-line:#E7CFCB; --btn-app-fg:#FFFFFF;
+  --disp:'Space Grotesk',sans-serif; --body:'Inter',sans-serif; --mono:'JetBrains Mono',monospace;
+}
+.dark-tokens{}
+html[data-theme="dark"]{
+  --paper:#14171B; --surface:#1B2025; --inset:#20252B; --ink:#E9EBE7; --muted:#9AA1A8; --faint:#69707A;
+  --hair:#2A3038; --hair2:#222830; --indigo:#8A95E0; --indigo-soft:#232B45; --indigo-line:#3B4670;
+  --amber:#D9A441; --amber-soft:#2C2818; --amber-line:#4A4226; --gain:#5FB088; --loss:#D7726A;
+  --gain-soft:#1C2A22; --loss-soft:#2C1E1C; --loss-line:#4A302C; --btn-app-fg:#11141A;
+}
+@media(prefers-color-scheme:dark){
+  html:not([data-theme="light"]):not([data-theme="dark"]){
+    --paper:#14171B; --surface:#1B2025; --inset:#20252B; --ink:#E9EBE7; --muted:#9AA1A8; --faint:#69707A;
+    --hair:#2A3038; --hair2:#222830; --indigo:#8A95E0; --indigo-soft:#232B45; --indigo-line:#3B4670;
+    --amber:#D9A441; --amber-soft:#2C2818; --amber-line:#4A4226; --gain:#5FB088; --loss:#D7726A;
+    --gain-soft:#1C2A22; --loss-soft:#2C1E1C; --loss-line:#4A302C; --btn-app-fg:#11141A;
+  }
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;transition:background .15s}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+h1,h2,h3,.disp{font-family:var(--disp);font-weight:500;letter-spacing:-0.01em}
+.wrap{max-width:1080px;margin:0 auto;padding:24px 20px 60px}
+.caption{font-family:var(--mono);font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:var(--faint);margin:30px 4px 10px}
+.app{background:var(--surface);border:1px solid var(--hair);border-radius:14px;overflow:hidden}
+.set{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:16px 18px;display:flex;align-items:center;justify-content:space-between}
+.set .lab{font-size:13px}.set .lab b{font-family:var(--disp);font-weight:500;display:block;font-size:14px}.set .lab span{color:var(--muted);font-size:12px}
+.toggle{display:inline-flex;border:1px solid var(--hair);border-radius:9px;overflow:hidden}
+.toggle button{font-family:var(--mono);font-size:11px;letter-spacing:.03em;padding:7px 14px;color:var(--muted);background:var(--surface);border:0;border-right:1px solid var(--hair);cursor:pointer}
+.toggle button:last-child{border-right:0}
+.toggle button.on{background:var(--ink);color:var(--paper)}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:11px 18px;border-bottom:1px solid var(--hair)}
+.brand{font-family:var(--disp);font-weight:600;letter-spacing:-0.02em;font-size:15px}.brand .dot{color:var(--indigo)}
+.status{display:flex;gap:7px;align-items:center}
+.pill{font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;padding:4px 9px;border:1px solid var(--hair);border-radius:999px;color:var(--muted);background:var(--paper)}
+.pill.live{color:var(--indigo);border-color:var(--indigo-line);background:var(--indigo-soft)}.pill.armed{color:var(--gain)}
+.body{display:flex;min-height:520px}
+.rail{width:188px;border-right:1px solid var(--hair);padding:16px 12px;flex-shrink:0}
+.grp{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);margin:14px 10px 6px}.grp:first-child{margin-top:0}
+.nav{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:8px;color:var(--muted);font-size:13px}
+.nav .ic{width:15px;height:15px;border:1.4px solid currentColor;border-radius:4px;flex-shrink:0}
+.nav.active{background:var(--indigo-soft);color:var(--indigo);font-weight:500}.nav.active .ic{background:var(--indigo);border-color:var(--indigo)}
+.main{flex:1;padding:20px 24px;min-width:0}
+.head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:18px}.head h2{font-size:20px}
+.sub{color:var(--muted);font-size:12.5px;margin-top:2px}
+.seg{display:inline-flex;border:1px solid var(--hair);border-radius:8px;overflow:hidden}
+.seg span{font-family:var(--mono);font-size:11px;padding:5px 11px;color:var(--muted);border-right:1px solid var(--hair)}.seg span:last-child{border-right:0}.seg span.on{background:var(--ink);color:var(--paper)}
+.metrics{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--hair);border:1px solid var(--hair);border-radius:10px;overflow:hidden;margin-bottom:18px}
+.met{background:var(--surface);padding:13px 14px}.met .k{font-size:11px;color:var(--muted);margin-bottom:7px}.met .v{font-family:var(--mono);font-size:19px;font-weight:500;letter-spacing:-0.02em}
+.gain{color:var(--gain)}.loss{color:var(--loss)}
+.panel{border:1px solid var(--hair);border-radius:10px;padding:15px 16px}.panel .ph{font-size:12px;color:var(--muted);margin-bottom:12px}
+.chart{width:100%;height:128px;display:block}.chart .line{stroke:var(--indigo);fill:none;stroke-width:2}.chart .fill{fill:var(--indigo);opacity:.07;stroke:none}
+.cols{display:grid;grid-template-columns:1.3fr 1fr;gap:14px;margin-top:14px}
+.bar{height:6px;background:var(--inset);border-radius:3px;margin-top:6px;overflow:hidden}.bar>i{display:block;height:6px;border-radius:3px;background:var(--indigo)}
+.alloc div{margin-bottom:11px;font-size:13px}
+.dep{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--hair2);font-size:13px}.dep:last-child{border-bottom:0}.dep .nm{font-weight:500}
+.link{color:var(--indigo);font-size:12.5px;margin-top:8px;display:inline-block}
+.statechip{font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;padding:4px 9px;border-radius:999px;background:var(--amber-soft);color:var(--amber);border:1px solid var(--amber-line)}
+.rev{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:6px}
+.evhead{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin-bottom:12px}
+.conf{margin:4px 0 14px}.conf .row{display:flex;align-items:center;gap:10px;margin-bottom:9px}.conf .lab{font-family:var(--mono);font-size:11px;color:var(--muted);width:96px;flex-shrink:0}
+.track{position:relative;flex:1;height:22px}.track .axis{position:absolute;top:10px;left:0;right:0;height:1px;background:var(--hair)}
+.track .ci{position:absolute;top:6px;height:9px;background:var(--indigo-soft);border:1px solid var(--indigo-line);border-radius:3px}
+.track .pt{position:absolute;top:3px;width:2px;height:15px;background:var(--indigo)}
+.track .thr{position:absolute;top:1px;width:1px;height:19px;border-left:1px dashed var(--amber)}
+.track .pct{position:absolute;top:-3px;font-family:var(--mono);font-size:11px;font-weight:500;color:var(--indigo);transform:translateX(-50%)}
+.metricline{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}.tag{font-family:var(--mono);font-size:10.5px;padding:3px 8px;border:1px solid var(--hair);border-radius:6px;color:var(--muted)}.tag b{color:var(--gain);font-weight:500;margin-right:3px}
+.thesis{font-size:13px;color:var(--muted);line-height:1.6}
+.rt{display:flex;gap:9px;font-size:13px;margin-bottom:10px}.rt .m{color:var(--amber);flex-shrink:0;font-family:var(--mono)}
+.worst{background:var(--loss-soft);border:1px solid var(--loss-line);border-radius:8px;padding:10px 12px;margin-top:6px}.worst .k{font-size:11px;color:var(--muted)}.worst .v{font-family:var(--mono);font-size:20px;font-weight:500;color:var(--loss)}
+.decide{display:flex;align-items:center;gap:10px;border-top:1px solid var(--hair);margin-top:16px;padding-top:15px}
+.decide input{flex:1;font-family:var(--body);font-size:13px;padding:9px 12px;border:1px solid var(--hair);border-radius:8px;background:var(--inset);color:var(--ink)}.decide input::placeholder{color:var(--faint)}
+.btn{font-family:var(--body);font-size:13px;font-weight:500;padding:9px 16px;border-radius:8px;border:1px solid var(--hair);background:var(--surface);color:var(--muted)}.btn.rej{color:var(--loss);border-color:var(--loss-line)}.btn.app{background:var(--indigo);border-color:var(--indigo);color:var(--btn-app-fg)}
+@media(max-width:760px){.metrics{grid-template-columns:repeat(3,1fr)}.cols,.rev{grid-template-columns:1fr}.rail{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="caption">Settings · appearance</div>
+  <div class="set">
+    <div class="lab"><b>Theme</b><span>Choose how Quanta looks. System follows your device.</span></div>
+    <div class="toggle">
+      <button data-set-theme="system" class="on">System</button>
+      <button data-set-theme="light">Light</button>
+      <button data-set-theme="dark">Dark</button>
+    </div>
+  </div>
+
+  <div class="caption">Portfolio — home</div>
+  <div class="app">
+    <div class="topbar"><div class="brand">Quanta<span class="dot">.</span></div>
+      <div class="status"><span class="pill live">paper</span><span class="pill armed">kill-switch armed</span><span class="pill">data live</span><span class="pill">budget 62%</span></div></div>
+    <div class="body">
+      <div class="rail">
+        <div class="grp">Work</div><div class="nav"><span class="ic"></span>Assistant</div>
+        <div class="grp">Your book</div><div class="nav active"><span class="ic"></span>Portfolio</div><div class="nav"><span class="ic"></span>Monitor</div><div class="nav"><span class="ic"></span>Performance</div>
+        <div class="grp">Strategies</div><div class="nav"><span class="ic"></span>Review queue</div><div class="nav"><span class="ic"></span>Registry</div>
+        <div class="grp">System</div><div class="nav"><span class="ic"></span>Evolution</div><div class="nav"><span class="ic"></span>Settings</div>
+      </div>
+      <div class="main">
+        <div class="head"><div><h2>Portfolio</h2><div class="sub">Your book, live — not a backtest.</div></div>
+          <div class="seg"><span>1D</span><span class="on">1M</span><span>YTD</span><span>All</span></div></div>
+        <div class="metrics">
+          <div class="met"><div class="k">Total equity</div><div class="v">$48,210</div></div>
+          <div class="met"><div class="k">Day P&amp;L</div><div class="v gain">+$312</div></div>
+          <div class="met"><div class="k">Return · 1M</div><div class="v gain">+3.4%</div></div>
+          <div class="met"><div class="k">Live Sharpe</div><div class="v">1.1</div></div>
+          <div class="met"><div class="k">Max drawdown</div><div class="v">−4.8%</div></div>
+          <div class="met"><div class="k">Win rate</div><div class="v">58%</div></div>
+        </div>
+        <div class="panel" style="margin-bottom:14px"><div class="ph">Portfolio equity curve</div>
+          <svg class="chart" viewBox="0 0 920 128" preserveAspectRatio="none">
+            <polyline class="line" points="0,108 90,99 180,104 270,80 360,86 450,62 540,70 630,46 720,52 810,30 920,24"/>
+            <polyline class="fill" points="0,108 90,99 180,104 270,80 360,86 450,62 540,70 630,46 720,52 810,30 920,24 920,128 0,128"/>
+          </svg></div>
+        <div class="cols">
+          <div class="panel alloc"><div class="ph">Allocation &amp; exposure</div>
+            <div>Range mean-reversion <span class="num" style="float:right;color:var(--muted)">46%</span><div class="bar"><i style="width:46%"></i></div></div>
+            <div>RSI reversion <span class="num" style="float:right;color:var(--muted)">32%</span><div class="bar"><i style="width:32%"></i></div></div>
+            <div>Cash <span class="num" style="float:right;color:var(--muted)">22%</span><div class="bar"><i style="width:22%;background:var(--faint)"></i></div></div>
+            <div style="color:var(--muted);font-size:12px;margin-top:13px">Gross exposure <span class="num">38%</span> of cap · daily loss <span class="num">1.2%</span> / <span class="num">3%</span> limit</div></div>
+          <div class="panel"><div class="ph">Active deployments</div>
+            <div class="dep"><span class="nm">XYZ range v3</span><span class="num gain">+1.8% · paper</span></div>
+            <div class="dep"><span class="nm">AAPL range v2</span><span class="num loss">−0.6% · live</span></div>
+            <div class="dep"><span class="nm">MSFT rsi v1</span><span class="num gain">+0.4% · live</span></div>
+            <a class="link">View all in Monitor →</a></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="caption">Strategy detail — review state</div>
+  <div class="app">
+    <div class="topbar"><div class="brand">Quanta<span class="dot">.</span></div>
+      <div class="status"><span class="pill live">paper</span><span class="pill armed">kill-switch armed</span><span class="pill">data live</span></div></div>
+    <div class="body">
+      <div class="rail">
+        <div class="grp">Work</div><div class="nav"><span class="ic"></span>Assistant</div>
+        <div class="grp">Your book</div><div class="nav"><span class="ic"></span>Portfolio</div><div class="nav"><span class="ic"></span>Monitor</div><div class="nav"><span class="ic"></span>Performance</div>
+        <div class="grp">Strategies</div><div class="nav active"><span class="ic"></span>Review queue</div><div class="nav"><span class="ic"></span>Registry</div>
+        <div class="grp">System</div><div class="nav"><span class="ic"></span>Evolution</div><div class="nav"><span class="ic"></span>Settings</div>
+      </div>
+      <div class="main">
+        <div class="head" style="align-items:center"><div><h2>XYZ · range mean-reversion v3</h2><div class="sub">Awaiting your decision — the harness passed it.</div></div>
+          <span class="statechip">validated · pending review</span></div>
+        <div class="seg" style="margin-bottom:18px"><span>Overview</span><span class="on">Validation</span><span>Live</span></div>
+        <div class="rev">
+          <div class="panel"><div class="evhead">Evidence</div>
+            <div class="conf">
+              <div class="row"><span class="lab">≥ +2% / 7d</span><div class="track"><div class="axis"></div><div class="ci" style="left:64%;width:15%"></div><div class="pt" style="left:72%"></div><div class="thr" style="left:80%"></div><div class="pct" style="left:72%">72%</div></div></div>
+              <div class="row"><span class="lab">≥ +5% / 7d</span><div class="track"><div class="axis"></div><div class="ci" style="left:26%;width:17%"></div><div class="pt" style="left:34%"></div><div class="thr" style="left:80%"></div><div class="pct" style="left:34%">34%</div></div></div>
+              <div class="row"><span class="lab">≥ +10% / 7d</span><div class="track"><div class="axis"></div><div class="ci" style="left:2%;width:10%"></div><div class="pt" style="left:6%"></div><div class="thr" style="left:80%"></div><div class="pct" style="left:6%;color:var(--muted)">6%</div></div></div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:2px;text-align:right">dashed line = gate threshold · band = 90% interval</div>
+            </div>
+            <div class="metricline"><span class="tag"><b>✓</b>DSR 0.96</span><span class="tag"><b>✓</b>PBO 0.14</span><span class="tag"><b>✓</b>180 trades</span><span class="tag"><b>✓</b>slope +</span><span class="tag"><b>✓</b>peers 8/10</span></div>
+            <div class="thesis"><b style="color:var(--ink);font-weight:500">Thesis.</b> Oversold extensions to the band edge fade — liquidity provision against transient noise, not a directional call. <span style="color:var(--indigo)">Read full →</span></div>
+          </div>
+          <div class="panel"><div class="evhead" style="color:var(--amber)">Counter-evidence · red team</div>
+            <div class="rt"><span class="m">!</span><span>Dies if the range breaks into a sustained downtrend.</span></div>
+            <div class="rt"><span class="m">!</span><span>Returns negatively skewed (−0.6) — already penalized in the DSR.</span></div>
+            <div class="rt"><span class="m">!</span><span>Premise is fragile: the range held only <span class="num">61%</span> of the last 12 months.</span></div>
+            <div class="worst"><div class="k">Worst-case Monte Carlo · 95th pct</div><div class="v">−14%</div></div>
+          </div>
+        </div>
+        <div class="decide"><input placeholder="Reason (required to reject)…"><button class="btn rej">Reject</button><button class="btn app">Approve → deploy</button></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script>
+document.querySelectorAll('[data-set-theme]').forEach(function(b){
+  b.addEventListener('click',function(){
+    var t=b.getAttribute('data-set-theme');
+    if(t==='system'){document.documentElement.removeAttribute('data-theme');}
+    else{document.documentElement.setAttribute('data-theme',t);}
+    document.querySelectorAll('[data-set-theme]').forEach(function(x){x.classList.toggle('on',x===b);});
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+# IBeam configuration for headless IB Gateway auth.
+# See https://github.com/Voyz/ibeam for full options.
+
+# These values are populated from environment variables at runtime.
+# IBKR credentials are injected ONLY into the execution scope.
+ibeam:
+  account: ${IBKR_ACCOUNT}
+  password: ${IBKR_PASSWORD}
+  gateway_port: 4002
+  trading_mode: paper
+  health_check_interval: 60

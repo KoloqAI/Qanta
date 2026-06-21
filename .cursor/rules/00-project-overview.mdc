@@ -1,0 +1,27 @@
+---
+description: Project overview, prime directives, and build order
+alwaysApply: true
+---
+
+# Quanta — AI trading research & execution platform
+
+LLM analyst PROPOSES strategies → validation harness PROVES/kills them → human APPROVES →
+deterministic engine EXECUTES inside hard guardrails. Phase 1: day/short-term US equities.
+
+## Prime directives (never violate)
+1. No LLM output ever places, sizes, or cancels a live order. Research agent and execution engine are
+   separate; only execution holds broker credentials.
+2. Deterministic where money moves — M6 execution and M7 risk contain no LLM calls and no nondeterminism.
+3. Nothing reaches live without (a) a passing ValidationReport AND (b) an explicit human Approval bound
+   to the exact strategy_version and a user_id.
+4. Stable interfaces, replaceable intelligence — modules communicate only through versioned interfaces.
+5. Everything is a tool with a permission tier (read / risk_reducing / risk_increasing). LLMs invoke only
+   read and risk_reducing tools.
+
+## Build order (see docs/06-build-sequence.md)
+Foundation → Auth → Data+Backtest → **Validation harness (prove it tells good from overfit)** →
+DSL → **Execution+guardrails on paper (prove drills fire)** → Tools+Agent → UI/end-to-end → Evolution →
+Hardening. Do not build the agent before the harness and the guardrails exist and pass their gates.
+Never advance past a red acceptance gate. When uncertain, optimize for safety and auditability over speed.
+
+Full spec in /docs. Read the relevant doc before implementing a module.

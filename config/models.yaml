@@ -1,0 +1,40 @@
+# LiteLLM tier routing and fallback configuration.
+# Never in the execution path — research/analysis only.
+
+tiers:
+  local:
+    primary: ollama/llama3.1:8b
+    fallback: ollama/mistral:7b
+    use_for:
+      - universe_scan
+      - technical_analysis
+      - characterize_ticker
+
+  mid:
+    primary: anthropic/claude-sonnet-4-20250514
+    fallback: openai/gpt-4o
+    use_for:
+      - author_strategy
+      - red_team_critique
+      - thesis_generation
+
+  frontier:
+    primary: anthropic/claude-opus-4-20250514
+    fallback: openai/o3
+    use_for:
+      - complex_research
+      - capability_proposals
+      - meta_analysis
+
+defaults:
+  temperature: 0.3
+  max_tokens: 4096
+  timeout: 120
+
+rate_limits:
+  local:
+    rpm: 60
+  mid:
+    rpm: 30
+  frontier:
+    rpm: 10

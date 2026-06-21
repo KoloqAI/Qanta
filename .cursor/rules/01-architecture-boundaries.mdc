@@ -1,0 +1,20 @@
+---
+description: Architecture boundaries and module isolation
+alwaysApply: true
+---
+
+# Architecture boundaries
+
+- Modular monolith: code lives in `app/modules/<name>/` and `app/core/`. Each module exposes a thin
+  public interface (`service.py`); never import another module's internal files directly.
+- Dependency direction: M2 (research) may call M1, M3, M4 interfaces. M6 (execution) may call M3, M7.
+  M2 must NOT be able to reach M6 or the broker — do not add an import, tool, or route that lets the
+  agent execute orders.
+- Providers are swappable behind interfaces: `MarketDataProvider`, `LLMProvider` (via LiteLLM),
+  `Broker`, `Backtester`, `ResearchDomain`, `Tool`. New capability = new impl/registered tool, not edits to core.
+- Tools carry a `permission` tier (read / risk_reducing / risk_increasing). The agent and assistant are
+  granted only read + risk_reducing. risk_increasing tools are invoked only by deterministic code after an Approval.
+- Optional modules (e.g. news) register/deregister their tools; the app must run fully with them off.
+- Services are stateless; all state in Postgres/Redis. Same Docker images run locally and on AWS —
+  never branch behavior on environment, only on config.
+- Round every number that reaches the UI. Use typed Pydantic DTOs at API boundaries.

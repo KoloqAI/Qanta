@@ -1,0 +1,22 @@
+---
+description: Authentication, authorization, and secrets handling
+globs:
+  - "app/modules/auth/**"
+  - "app/api/**"
+  - "app/config.py"
+alwaysApply: true
+---
+
+# Auth & security
+
+- Every non-public route depends on `current_user`. All mutating or consequential endpoints require an
+  authenticated session; unauthenticated requests return 401.
+- Credentials: argon2 password hashing or passkey/WebAuthn. Sessions are server-side via httpOnly,
+  SameSite cookies with CSRF protection on mutating routes and sensible expiry/refresh.
+- Approval and audit records reference the authenticated `user_id`. The human-approval gate and the
+  assistant's stage-and-confirm both bind to that identity.
+- Secrets (broker credentials, LLM provider API keys) live in a vault (AWS Secrets Manager; local dev `.env`).
+  Broker credentials are injected ONLY into the execution scope — never the research agent, never the client.
+  LLM keys never reach the browser. No secret may appear in any client-facing response (assert in tests).
+- Scope every record by `user_id` even though Phase 1 is single-user, to keep the multi-user path open.
+- Never log secrets or full credentials. Redact tokens in logs.

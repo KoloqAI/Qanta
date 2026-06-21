@@ -1,0 +1,17 @@
+# Global risk limits — enforced by RiskGate (M7), non-overridable.
+# Strategy-level risk envelopes must be a subset of these values.
+
+per_trade_stop_pct: 5.0          # max stop-loss distance per trade (%)
+max_position_pct: 10.0           # max single-position size as % of equity
+max_gross_exposure_pct: 100.0    # max total gross exposure as % of equity
+daily_drawdown_kill_pct: 5.0     # daily loss threshold to flatten all + halt (%)
+pdt_equity_minimum: 25000        # intraday blocked below this equity ($)
+
+# Portfolio-level caps (enforced by PortfolioRiskGate)
+max_per_symbol_aggregate_pct: 15.0   # max exposure to a single symbol across all strategies
+max_sector_pct: 30.0                 # max exposure to a single sector
+cash_buffer_pct: 10.0                # minimum cash reserve as % of equity
+max_simultaneous_strategies: 10      # max concurrent live strategies
+
+# EOD flatten buffer (minutes before close for intraday strategies)
+eod_flatten_buffer_minutes: 5
