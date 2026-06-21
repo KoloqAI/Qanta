@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { apiFetch } from '../lib/api'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { apiFetch, apiMutate } from '../lib/api'
 import { ConfidenceBar } from '../components/ConfidenceBar'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { useState } from 'react'
@@ -33,10 +33,40 @@ export function StrategyDetailPage() {
   const [tab, setTab] = useState<'overview' | 'validation' | 'live'>('overview')
   const [reason, setReason] = useState('')
 
+  const queryClient = useQueryClient()
+
   const { data, isLoading } = useQuery<StrategyData>({
     queryKey: ['strategy', id],
     queryFn: () => apiFetch(`/api/strategies/${id}`),
   })
+
+  const approveMutation = useMutation({
+    mutationFn: (approveReason: string) =>
+      apiMutate(`/api/strategies/${id}/approve`, { reason: approveReason }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['strategy', id] })
+    },
+  })
+
+  const rejectMutation = useMutation({
+    mutationFn: (rejectReason: string) =>
+      apiMutate(`/api/strategies/${id}/reject`, { reason: rejectReason }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['strategy', id] })
+      navigate(-1)
+    },
+  })
+
+  const handleApprove = () => {
+    if (!window.confirm('This is a risk-increasing action. Are you sure you want to approve and deploy this strategy?')) {
+      return
+    }
+    approveMutation.mutate(reason)
+  }
+
+  const handleReject = () => {
+    rejectMutation.mutate(reason)
+  }
 
   if (isLoading) {
     return (
@@ -173,8 +203,20 @@ export function StrategyDetailPage() {
                 placeholder="Reason for decision..."
                 className="w-full px-3 py-2 bg-inset border border-hairline rounded-lg text-sm mb-3 resize-none h-20" />
               <div className="flex gap-2 justify-end">
-                <button className="px-4 py-2 border border-hairline rounded-lg text-sm text-loss hover:bg-loss/5">Reject</button>
-                <button className="px-4 py-2 bg-indigo text-white rounded-lg text-sm hover:bg-indigo/90">Approve &amp; Deploy</button>
+                <button
+                  onClick={handleReject}
+                  disabled={rejectMutation.isPending}
+                  className="px-4 py-2 border border-hairline rounded-lg text-sm text-loss hover:bg-loss/5 disabled:opacity-50"
+                >
+                  {rejectMutation.isPending ? 'Rejecting...' : 'Reject'}
+                </button>
+                <button
+                  onClick={handleApprove}
+                  disabled={approveMutation.isPending}
+                  className="px-4 py-2 bg-indigo text-white rounded-lg text-sm hover:bg-indigo/90 disabled:opacity-50"
+                >
+                  {approveMutation.isPending ? 'Approving...' : 'Approve & Deploy'}
+                </button>
               </div>
             </div>
           )}

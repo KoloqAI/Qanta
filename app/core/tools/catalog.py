@@ -196,12 +196,18 @@ class QueryBookTool(Tool):
     permission = Permission.READ
 
     async def invoke(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+        from app import state
+
+        positions = await state.broker.positions()
+        gross_exposure = sum(
+            abs(p.get("qty", 0)) * 100 for p in positions
+        )
         return ToolResult(
             success=True,
             data={
-                "equity": 100_000,
-                "positions": [],
-                "gross_exposure": 0,
+                "equity": state.INITIAL_EQUITY,
+                "positions": positions,
+                "gross_exposure": gross_exposure,
                 "daily_pnl": 0,
             },
         )
@@ -213,7 +219,26 @@ class PauseDeploymentTool(Tool):
     permission = Permission.RISK_REDUCING
 
     async def invoke(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+        from app import state
+
         deployment_id = args.get("deployment_id", "")
+        if deployment_id not in state.deployments:
+            return ToolResult(
+                success=False,
+                error=f"Deployment {deployment_id} not found",
+            )
+
+        await state.runtime.stop(deployment_id)
+        state.deployments[deployment_id]["status"] = "paused"
+
+        await state.audit_log.log(
+            actor="assistant",
+            action="deployment_paused",
+            subject_type="deployment",
+            subject_id=deployment_id,
+            user_id=ctx.user_id,
+        )
+
         return ToolResult(
             success=True,
             data={"deployment_id": deployment_id, "status": "paused"},
@@ -226,7 +251,26 @@ class FlattenDeploymentTool(Tool):
     permission = Permission.RISK_REDUCING
 
     async def invoke(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+        from app import state
+
         deployment_id = args.get("deployment_id", "")
+        if deployment_id not in state.deployments:
+            return ToolResult(
+                success=False,
+                error=f"Deployment {deployment_id} not found",
+            )
+
+        await state.broker.flatten_all()
+        state.deployments[deployment_id]["status"] = "flattened"
+
+        await state.audit_log.log(
+            actor="assistant",
+            action="deployment_flattened",
+            subject_type="deployment",
+            subject_id=deployment_id,
+            user_id=ctx.user_id,
+        )
+
         return ToolResult(
             success=True,
             data={"deployment_id": deployment_id, "status": "flattened"},

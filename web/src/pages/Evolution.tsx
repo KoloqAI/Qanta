@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query'
-import { apiFetch } from '../lib/api'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { apiFetch, apiMutate } from '../lib/api'
 
 interface Digest {
   promotions: { name: string; reason: string }[]
@@ -10,9 +10,19 @@ interface Digest {
 }
 
 export function EvolutionPage() {
+  const queryClient = useQueryClient()
+
   const { data, isLoading } = useQuery<Digest>({
     queryKey: ['evolution'],
     queryFn: () => apiFetch('/api/evolution/digest'),
+  })
+
+  const decideMutation = useMutation({
+    mutationFn: ({ proposalId, approved }: { proposalId: string; approved: boolean }) =>
+      apiMutate(`/api/evolution/proposals/${proposalId}/decide`, { approved }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['evolution'] })
+    },
   })
 
   if (isLoading) {
@@ -81,8 +91,20 @@ export function EvolutionPage() {
                 </div>
                 {p.status === 'pending_approval' ? (
                   <div className="flex gap-1">
-                    <button className="text-xs px-2 py-1 bg-gain/10 text-gain rounded hover:bg-gain/20">Approve</button>
-                    <button className="text-xs px-2 py-1 bg-loss/10 text-loss rounded hover:bg-loss/20">Reject</button>
+                    <button
+                      onClick={() => decideMutation.mutate({ proposalId: p.id, approved: true })}
+                      disabled={decideMutation.isPending}
+                      className="text-xs px-2 py-1 bg-gain/10 text-gain rounded hover:bg-gain/20 disabled:opacity-50"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => decideMutation.mutate({ proposalId: p.id, approved: false })}
+                      disabled={decideMutation.isPending}
+                      className="text-xs px-2 py-1 bg-loss/10 text-loss rounded hover:bg-loss/20 disabled:opacity-50"
+                    >
+                      Reject
+                    </button>
                   </div>
                 ) : (
                   <span className={`text-xs px-2 py-0.5 rounded ${p.status === 'approved' ? 'bg-gain/10 text-gain' : 'bg-loss/10 text-loss'}`}>

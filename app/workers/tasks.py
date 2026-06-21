@@ -4,11 +4,17 @@ from typing import Any
 
 
 async def run_research(ctx: dict, run_id: str, goal: str, **kwargs: Any) -> dict:
-    from app.modules.research.service import ShortTermEquityDomain, StrategyAuthorImpl
-    domain = ShortTermEquityDomain()
+    from app.modules.research.service import (
+        ShortTermEquityDomain,
+        StrategyAuthorImpl,
+        create_llm_provider,
+    )
+
+    llm = create_llm_provider()
+    domain = ShortTermEquityDomain(llm=llm)
     candidates = await domain.scan(goal, {})
     specs = []
-    author = StrategyAuthorImpl()
+    author = StrategyAuthorImpl(llm=llm)
     for c in candidates[:3]:
         spec = await author.author(
             f"{goal} opportunity in {c['ticker']}", {"ticker": c["ticker"]}
@@ -78,11 +84,21 @@ async def run_validation(ctx: dict, strategy_version_id: str, **kwargs: Any) -> 
 
 async def run_evolution_tier1(ctx: dict, **kwargs: Any) -> dict:
     from app.modules.evolution.service import EvolutionLoopImpl
-    loop = EvolutionLoopImpl()
+    from app.modules.monitoring.service import MonitoringServiceImpl
+    from app.modules.registry.service import StrategyRegistryImpl
+
+    monitoring = kwargs.get("monitoring") or MonitoringServiceImpl()
+    registry = kwargs.get("registry") or StrategyRegistryImpl()
+    loop = EvolutionLoopImpl(monitoring=monitoring, registry=registry)
     return await loop.run_tier1()
 
 
 async def run_evolution_tier2(ctx: dict, budget: int = 10, **kwargs: Any) -> dict:
     from app.modules.evolution.service import EvolutionLoopImpl
-    loop = EvolutionLoopImpl()
+    from app.modules.monitoring.service import MonitoringServiceImpl
+    from app.modules.registry.service import StrategyRegistryImpl
+
+    monitoring = kwargs.get("monitoring") or MonitoringServiceImpl()
+    registry = kwargs.get("registry") or StrategyRegistryImpl()
+    loop = EvolutionLoopImpl(monitoring=monitoring, registry=registry)
     return await loop.run_tier2(budget)

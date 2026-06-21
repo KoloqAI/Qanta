@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { apiFetch } from '../lib/api'
+import { apiFetch, apiMutate } from '../lib/api'
 
 interface Message {
   id: string
@@ -42,6 +42,38 @@ export function AssistantPage() {
       }])
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleConfirmAction = async (actionId: string) => {
+    try {
+      await apiMutate(`/api/assistant/actions/${actionId}/confirm`)
+      setMessages(prev =>
+        prev.map(msg => ({
+          ...msg,
+          staged_actions: msg.staged_actions?.map(sa =>
+            sa.id === actionId ? { ...sa, status: 'confirmed' } : sa
+          ),
+        }))
+      )
+    } catch {
+      // keep staged action visible so user can retry
+    }
+  }
+
+  const handleCancelAction = async (actionId: string) => {
+    try {
+      await apiMutate(`/api/assistant/actions/${actionId}/cancel`)
+      setMessages(prev =>
+        prev.map(msg => ({
+          ...msg,
+          staged_actions: msg.staged_actions?.map(sa =>
+            sa.id === actionId ? { ...sa, status: 'cancelled' } : sa
+          ),
+        }))
+      )
+    } catch {
+      // keep staged action visible so user can retry
     }
   }
 
@@ -88,10 +120,28 @@ export function AssistantPage() {
                     <div key={sa.id} className="border border-amber rounded-lg p-2">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-medium text-amber">{sa.action}</span>
-                        <div className="flex gap-1">
-                          <button className="text-xs px-2 py-0.5 rounded bg-gain/10 text-gain hover:bg-gain/20">Confirm</button>
-                          <button className="text-xs px-2 py-0.5 rounded bg-loss/10 text-loss hover:bg-loss/20">Cancel</button>
-                        </div>
+                        {sa.status === 'pending' ? (
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => handleConfirmAction(sa.id)}
+                              className="text-xs px-2 py-0.5 rounded bg-gain/10 text-gain hover:bg-gain/20"
+                            >
+                              Confirm
+                            </button>
+                            <button
+                              onClick={() => handleCancelAction(sa.id)}
+                              className="text-xs px-2 py-0.5 rounded bg-loss/10 text-loss hover:bg-loss/20"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <span className={`text-xs px-2 py-0.5 rounded ${
+                            sa.status === 'confirmed' ? 'bg-gain/10 text-gain' : 'bg-loss/10 text-loss'
+                          }`}>
+                            {sa.status}
+                          </span>
+                        )}
                       </div>
                     </div>
                   ))}

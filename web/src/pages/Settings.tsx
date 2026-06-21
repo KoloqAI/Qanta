@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { apiFetch } from '../lib/api'
 import { useTheme } from '../hooks/useTheme'
+import { useQuery } from '@tanstack/react-query'
 
 const TABS = [
   { id: 'account', label: 'Account' },
@@ -15,6 +16,34 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]['id']
 
+interface Connection {
+  name: string
+  description: string
+  status: string
+}
+
+interface ModelTier {
+  tier: string
+  provider: string
+  model: string
+  status: string
+}
+
+interface Guardrail {
+  label: string
+  value: string
+}
+
+interface ValidationThreshold {
+  label: string
+  value: string
+}
+
+interface ToolModule {
+  name: string
+  enabled: boolean
+}
+
 export function SettingsPage() {
   const [tab, setTab] = useState<TabId>('account')
   const { user } = useAuth()
@@ -22,6 +51,36 @@ export function SettingsPage() {
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [message, setMessage] = useState('')
+
+  const { data: connections } = useQuery<Connection[]>({
+    queryKey: ['settings', 'connections'],
+    queryFn: () => apiFetch('/api/settings/connections'),
+    enabled: tab === 'connections',
+  })
+
+  const { data: models } = useQuery<ModelTier[]>({
+    queryKey: ['settings', 'models'],
+    queryFn: () => apiFetch('/api/settings/models'),
+    enabled: tab === 'models',
+  })
+
+  const { data: risk } = useQuery<Guardrail[]>({
+    queryKey: ['settings', 'risk'],
+    queryFn: () => apiFetch('/api/settings/risk'),
+    enabled: tab === 'risk',
+  })
+
+  const { data: validation } = useQuery<ValidationThreshold[]>({
+    queryKey: ['settings', 'validation'],
+    queryFn: () => apiFetch('/api/settings/validation'),
+    enabled: tab === 'validation',
+  })
+
+  const { data: tools } = useQuery<ToolModule[]>({
+    queryKey: ['settings', 'tools'],
+    queryFn: () => apiFetch('/api/settings/tools'),
+    enabled: tab === 'tools',
+  })
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -97,14 +156,24 @@ export function SettingsPage() {
             <div className="space-y-4">
               <h2 className="font-display text-sm text-muted">Connections</h2>
               <div className="rounded-lg border border-hairline bg-surface p-4 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div><p className="text-sm text-ink">IBKR (Broker)</p><p className="text-xs text-muted">Interactive Brokers connection</p></div>
-                  <span className="text-xs px-2 py-0.5 rounded bg-surface text-muted">Not connected</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div><p className="text-sm text-ink">Market Data</p><p className="text-xs text-muted">Historical + live data feed</p></div>
-                  <span className="text-xs px-2 py-0.5 rounded bg-gain/10 text-gain">Sample data active</span>
-                </div>
+                {(connections ?? [
+                  { name: 'IBKR (Broker)', description: 'Interactive Brokers connection', status: 'Not connected' },
+                  { name: 'Market Data', description: 'Historical + live data feed', status: 'Sample data active' },
+                ]).map(c => (
+                  <div key={c.name} className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-ink">{c.name}</p>
+                      <p className="text-xs text-muted">{c.description}</p>
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded ${
+                      c.status.toLowerCase().includes('active') || c.status.toLowerCase().includes('connected')
+                        ? 'bg-gain/10 text-gain'
+                        : 'bg-surface text-muted'
+                    }`}>
+                      {c.status}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -113,10 +182,17 @@ export function SettingsPage() {
             <div className="space-y-4">
               <h2 className="font-display text-sm text-muted">Models &amp; Routing</h2>
               <div className="rounded-lg border border-hairline bg-surface p-4 space-y-3">
-                {['Local (Ollama)', 'Mid (Bedrock/Vertex)', 'Frontier (Claude/GPT-4)'].map((tier, i) => (
+                {(models ?? [
+                  { tier: 'Local (Ollama)', provider: '', model: '', status: 'Configure in models.yaml' },
+                  { tier: 'Mid (Bedrock/Vertex)', provider: '', model: '', status: 'Configure in models.yaml' },
+                  { tier: 'Frontier (Claude/GPT-4)', provider: '', model: '', status: 'Configure in models.yaml' },
+                ]).map((m, i) => (
                   <div key={i} className="flex items-center justify-between py-2 border-b border-hairline last:border-0">
-                    <span className="text-sm text-ink">{tier}</span>
-                    <span className="text-xs text-muted">Configure in models.yaml</span>
+                    <div>
+                      <span className="text-sm text-ink">{m.tier}</span>
+                      {m.model && <span className="ml-2 text-xs text-muted font-mono">{m.model}</span>}
+                    </div>
+                    <span className="text-xs text-muted">{m.status}</span>
                   </div>
                 ))}
               </div>
@@ -127,12 +203,12 @@ export function SettingsPage() {
             <div className="space-y-4">
               <h2 className="font-display text-sm text-muted">Risk &amp; Guardrails</h2>
               <div className="rounded-lg border border-hairline bg-surface p-4 space-y-3">
-                {[
+                {(risk ?? [
                   { label: 'Per-Trade Stop', value: '5.0%' },
                   { label: 'Max Position', value: '10.0%' },
                   { label: 'Daily Drawdown Kill', value: '5.0%' },
                   { label: 'PDT Equity Min', value: '$25,000' },
-                ].map(g => (
+                ]).map(g => (
                   <div key={g.label} className="flex items-center justify-between py-2 border-b border-hairline last:border-0">
                     <span className="text-sm text-ink">{g.label}</span>
                     <span className="font-mono text-sm text-muted">{g.value}</span>
@@ -146,12 +222,12 @@ export function SettingsPage() {
             <div className="space-y-4">
               <h2 className="font-display text-sm text-muted">Validation Thresholds</h2>
               <div className="rounded-lg border border-hairline bg-surface p-4 space-y-3">
-                {[
+                {(validation ?? [
                   { label: 'DSR Threshold', value: '> 0.95' },
                   { label: 'PBO Threshold', value: '< 0.20' },
                   { label: 'Min Trades', value: '>= 100' },
                   { label: 'Cost-Adjusted Edge', value: '>= 50%' },
-                ].map(t => (
+                ]).map(t => (
                   <div key={t.label} className="flex items-center justify-between py-2 border-b border-hairline last:border-0">
                     <span className="text-sm text-ink">{t.label}</span>
                     <span className="font-mono text-sm text-muted">{t.value}</span>
@@ -165,12 +241,12 @@ export function SettingsPage() {
             <div className="space-y-4">
               <h2 className="font-display text-sm text-muted">Tools &amp; Modules</h2>
               <div className="rounded-lg border border-hairline bg-surface p-4 space-y-3">
-                {[
+                {(tools ?? [
                   { name: 'News Module', enabled: false },
                   { name: 'Universe Scan', enabled: true },
                   { name: 'Technical Analysis', enabled: true },
                   { name: 'Backtest', enabled: true },
-                ].map(t => (
+                ]).map(t => (
                   <div key={t.name} className="flex items-center justify-between py-2 border-b border-hairline last:border-0">
                     <span className="text-sm text-ink">{t.name}</span>
                     <span className={`text-xs px-2 py-0.5 rounded ${t.enabled ? 'bg-gain/10 text-gain' : 'bg-surface text-muted'}`}>

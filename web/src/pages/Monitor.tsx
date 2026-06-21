@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query'
-import { apiFetch } from '../lib/api'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { apiFetch, apiMutate } from '../lib/api'
 import { StatCard } from '../components/StatCard'
 
 interface Deployment {
@@ -20,11 +20,35 @@ interface MonitorData {
 }
 
 export function MonitorPage() {
+  const queryClient = useQueryClient()
+
   const { data, isLoading } = useQuery<MonitorData>({
     queryKey: ['monitor'],
     queryFn: () => apiFetch('/api/monitor'),
     refetchInterval: 5000,
   })
+
+  const pauseMutation = useMutation({
+    mutationFn: (id: string) => apiMutate(`/api/deployments/${id}/pause`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['monitor'] })
+    },
+  })
+
+  const flattenMutation = useMutation({
+    mutationFn: (id: string) => apiMutate(`/api/deployments/${id}/flatten`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['monitor'] })
+    },
+  })
+
+  const handlePause = (id: string) => {
+    pauseMutation.mutate(id)
+  }
+
+  const handleFlatten = (id: string) => {
+    flattenMutation.mutate(id)
+  }
 
   if (isLoading) {
     return (
@@ -85,8 +109,20 @@ export function MonitorPage() {
                   }`} />
                 </div>
                 <div className="flex gap-2">
-                  <button className="text-xs px-2 py-1 border border-hairline rounded hover:bg-surface transition">Pause</button>
-                  <button className="text-xs px-2 py-1 border border-hairline rounded hover:bg-surface transition text-loss">Flatten</button>
+                  <button
+                    onClick={() => handlePause(dep.id)}
+                    disabled={pauseMutation.isPending}
+                    className="text-xs px-2 py-1 border border-hairline rounded hover:bg-surface transition disabled:opacity-50"
+                  >
+                    {pauseMutation.isPending ? 'Pausing...' : 'Pause'}
+                  </button>
+                  <button
+                    onClick={() => handleFlatten(dep.id)}
+                    disabled={flattenMutation.isPending}
+                    className="text-xs px-2 py-1 border border-hairline rounded hover:bg-surface transition text-loss disabled:opacity-50"
+                  >
+                    {flattenMutation.isPending ? 'Flattening...' : 'Flatten'}
+                  </button>
                 </div>
               </div>
 
