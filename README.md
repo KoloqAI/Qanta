@@ -20,44 +20,54 @@ Phase 1: day / short-term US equities.
 
 ---
 
-## External Services & Subscriptions
+## Accounts & API Keys
 
-The table below lists every external dependency. Mark what you need for your phase of build.
+The table below lists every external dependency grouped by what's needed to run.
 
-### Required (core stack — always needed)
+### Zero keys required — works out of the box
 
-| Service | Purpose | How to get it |
-|---------|---------|----------------|
-| **IBKR account** | Paper + live order execution | [interactivebrokers.com](https://www.interactivebrokers.com) — Individual or Pro account. Enable API access in Account Settings. |
-| **IB Gateway / TWS** | Local broker connection | Download from IBKR. Run on the host; the app connects via TCP (`IBKR_HOST`, `IBKR_PORT`). Paper trading uses port `4002`; live uses `4001`. |
+The platform ships with `SampleDataProvider` (deterministic synthetic market data) and
+`StubLLMProvider`, so you can run, develop, and test without any external account.
+Docker Compose brings up Postgres, Redis, and Ollama automatically.
 
-### LLM Provider — choose at least one
+### Broker — needed for paper & live trading
 
-| Provider | `.env` key | Notes |
-|----------|-----------|-------|
-| **Ollama (local)** | `OLLAMA_BASE_URL` | Free. Bundled in `docker-compose.yml`. Runs grunt-tier models locally (Llama 3, Mistral, etc.). No API key needed. |
-| **OpenAI** | `OPENAI_API_KEY` | [platform.openai.com](https://platform.openai.com/api-keys) — GPT-4o for mid tier. |
-| **Anthropic** | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) — Claude Sonnet/Opus for frontier tier. |
-| **AWS Bedrock** | `AWS_BEDROCK_REGION` + AWS credentials | [aws.amazon.com/bedrock](https://aws.amazon.com/bedrock) — Titan / Claude / Llama via Bedrock. Requires `~/.aws/credentials` or IAM role. |
+| Service | `.env` key(s) | How to get it |
+|---------|--------------|----------------|
+| **IBKR account** | `IBKR_HOST`, `IBKR_PORT`, `IBKR_CLIENT_ID` | [interactivebrokers.com](https://www.interactivebrokers.com) — Individual or Pro. Enable API access in Account Settings. |
+| **IB Gateway / TWS** | _(runs locally, no key)_ | Download from IBKR. Paper trading: port `4002`. Live: port `4001`. |
 
-At least one hosted provider is recommended alongside Ollama. LiteLLM routes by task tier with fallbacks.
+### LLM providers — at least one recommended for research features
 
-### Market Data — choose based on your needs
+LiteLLM routes requests by task tier (local → mid → frontier) with automatic fallback.
+Without any key, the `StubLLMProvider` returns template responses — functional but not intelligent.
 
-| Provider | Purpose | Where to get it |
-|----------|---------|-----------------|
-| **OpenBB ODP** | Live + historical equity data | [openbb.co](https://openbb.co) — free tier available. Set `OPENBB_API_KEY` in `.env`. |
-| **Polygon.io** | Historical + live US equities | [polygon.io](https://polygon.io) — Starter plan minimum for historical. Set `POLYGON_API_KEY` in `.env`. |
-| **Norgate Data** | Survivorship-free historical data | [norgatedata.com](https://norgatedata.com) — subscription required; point-in-time including delisted tickers. Strongly recommended for backtesting. |
-| **Databento** | Institutional-grade tick/bar data | [databento.com](https://databento.com) — pay-per-query; best for high-quality backtests. Set `DATABENTO_API_KEY` in `.env`. |
-| **IBKR data feed** | Live quotes via IB Gateway | Included with IBKR account. No separate key needed. |
+| Provider | `.env` key | Tier | How to get it |
+|----------|-----------|------|----------------|
+| **Ollama** | `OLLAMA_BASE_URL` | local | Free. Bundled in `docker-compose.yml`. No API key — just runs locally. |
+| **Anthropic** | `ANTHROPIC_API_KEY` | mid / frontier | [console.anthropic.com](https://console.anthropic.com) — Claude Sonnet (mid), Opus (frontier). |
+| **OpenAI** | `OPENAI_API_KEY` | mid (fallback) | [platform.openai.com](https://platform.openai.com/api-keys) — GPT-4o. |
+| **Google Gemini** | `GEMINI_API_KEY` | mid / frontier | [aistudio.google.com](https://aistudio.google.com/apikey) — Gemini 2.5 Flash / Pro. |
+| **AWS Bedrock** | `AWS_BEDROCK_REGION` + AWS creds | any | [aws.amazon.com/bedrock](https://aws.amazon.com/bedrock) — requires `~/.aws/credentials` or IAM role. |
 
-### Notifications — optional, all can be left blank
+### Market data vendors — needed when you replace SampleDataProvider
 
-| Provider | Purpose | Where to get it |
-|----------|---------|-----------------|
-| **AWS SES** | Email alerts (fills, kill-switch events) | [aws.amazon.com/ses](https://aws.amazon.com/ses) — requires verified sender domain. Set `SES_REGION` + `SES_FROM_EMAIL`. |
-| **Telegram Bot** | Real-time trade notifications | [t.me/BotFather](https://t.me/BotFather) — create a bot, get `TELEGRAM_BOT_TOKEN` and your `TELEGRAM_CHAT_ID`. |
+OpenBB ODP is a local Python library that unifies access to multiple data vendors — it does **not**
+require its own API key. The keys below are for the underlying vendors you route through it.
+
+| Provider | `.env` key | Purpose | How to get it |
+|----------|-----------|---------|----------------|
+| **Polygon.io** | `POLYGON_API_KEY` | Historical + live US equities | [polygon.io](https://polygon.io) — Starter plan minimum. |
+| **Norgate Data** | _(desktop app)_ | Survivorship-free historical data | [norgatedata.com](https://norgatedata.com) — subscription; includes delisted tickers. Strongly recommended for backtesting. |
+| **Databento** | `DATABENTO_API_KEY` | Institutional-grade tick/bar data | [databento.com](https://databento.com) — pay-per-query. |
+| **IBKR data feed** | _(included with IBKR account)_ | Live quotes via IB Gateway | No separate key needed. |
+
+### Notifications — all optional
+
+| Provider | `.env` key(s) | Purpose | How to get it |
+|----------|--------------|---------|----------------|
+| **AWS SES** | `SES_REGION`, `SES_FROM_EMAIL` | Email alerts (fills, kill-switch) | [aws.amazon.com/ses](https://aws.amazon.com/ses) — requires verified sender domain. |
+| **Telegram Bot** | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Real-time trade notifications | [t.me/BotFather](https://t.me/BotFather) — create a bot, get the token and chat ID. |
 
 ---
 
@@ -101,8 +111,9 @@ IBKR_HOST=127.0.0.1
 IBKR_PORT=4002
 IBKR_CLIENT_ID=1
 
-# ── Market data (leave blank if not subscribed) ───────────────────────────────
-OPENBB_API_KEY=
+# ── Market data vendor keys (leave blank if not subscribed) ──────────────────
+# OpenBB ODP is a local library — no API key needed for it.
+# These keys are for the underlying data vendors routed through OpenBB.
 POLYGON_API_KEY=
 DATABENTO_API_KEY=
 
