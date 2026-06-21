@@ -11,6 +11,7 @@ LLM_KEYS = {
     "litellm_api_key",
     "openai_api_key",
     "anthropic_api_key",
+    "gemini_api_key",
     "aws_bedrock_region",
 }
 NOTIFICATION_KEYS = {
@@ -36,6 +37,7 @@ def get_llm_secrets() -> dict[str, str]:
         "litellm_api_key": settings.litellm_api_key,
         "openai_api_key": settings.openai_api_key,
         "anthropic_api_key": settings.anthropic_api_key,
+        "gemini_api_key": settings.gemini_api_key,
         "aws_bedrock_region": settings.aws_bedrock_region,
     }
 

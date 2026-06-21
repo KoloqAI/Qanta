@@ -13,6 +13,7 @@ tiers:
   mid:
     primary: anthropic/claude-sonnet-4-20250514
     fallback: openai/gpt-4o
+    # Gemini option (set GEMINI_API_KEY): gemini/gemini-2.5-flash
     use_for:
       - author_strategy
       - red_team_critique
@@ -21,6 +22,7 @@ tiers:
   frontier:
     primary: anthropic/claude-opus-4-20250514
     fallback: openai/o3
+    # Gemini option (set GEMINI_API_KEY): gemini/gemini-2.5-pro
     use_for:
       - complex_research
       - capability_proposals

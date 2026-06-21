@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     litellm_api_key: str = ""
     openai_api_key: str = ""
     anthropic_api_key: str = ""
+    gemini_api_key: str = ""
     aws_bedrock_region: str = ""
 
     # Broker (execution scope only)
