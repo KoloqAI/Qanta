@@ -96,7 +96,6 @@ SESSION_EXPIRE_MINUTES=1440          # 24 hours; adjust as needed
 
 # ── LLM (at least one provider required) ─────────────────────────────────────
 OLLAMA_BASE_URL=http://localhost:11434   # bundled in Docker; keep as-is
-LITELLM_API_KEY=                         # optional: LiteLLM proxy key if self-hosting proxy
 OPENAI_API_KEY=                          # sk-...
 ANTHROPIC_API_KEY=                       # sk-ant-...
 GEMINI_API_KEY=                          # Google AI Studio key (gemini/* models)

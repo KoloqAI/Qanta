@@ -8,7 +8,6 @@ from app.config import settings
 BROKER_KEYS = {"ibkr_host", "ibkr_port", "ibkr_client_id"}
 LLM_KEYS = {
     "ollama_base_url",
-    "litellm_api_key",
     "openai_api_key",
     "anthropic_api_key",
     "gemini_api_key",
@@ -34,7 +33,6 @@ def get_broker_secrets() -> dict[str, Any]:
 def get_llm_secrets() -> dict[str, str]:
     return {
         "ollama_base_url": settings.ollama_base_url,
-        "litellm_api_key": settings.litellm_api_key,
         "openai_api_key": settings.openai_api_key,
         "anthropic_api_key": settings.anthropic_api_key,
         "gemini_api_key": settings.gemini_api_key,

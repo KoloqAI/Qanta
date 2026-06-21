@@ -68,7 +68,7 @@ def create_llm_provider() -> LLMProvider:
     """
     from app.config import settings
 
-    if settings.anthropic_api_key or settings.openai_api_key or settings.litellm_api_key:
+    if settings.anthropic_api_key or settings.openai_api_key or settings.gemini_api_key:
         from app.modules.research.llm_provider import LiteLLMProvider
 
         logger.info("Using LiteLLMProvider (API key detected)")
