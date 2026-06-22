@@ -209,26 +209,113 @@ async def send_message(body: MessageBody, db: DB, user: CurrentUser) -> dict:
         user_id=user.get("id"),
     )
 
+    # Build a human-readable content string from the tool result
+    if result.success:
+        content = _format_tool_result(tool_name, result.data)
+    else:
+        content = f"Error running {tool_name}: {result.error or 'unknown error'}"
+
     return {
         "message": {
             "id": msg_id,
             "role": "assistant",
-            "content": (
-                f"Executed {tool_name} successfully."
-                if result.success
-                else f"Error running {tool_name}: {result.error or 'unknown error'}"
-            ),
+            "content": content,
             "tool_calls": [
                 {
-                    "tool": tool_name,
-                    "args": args,
+                    "name": tool_name,
+                    "status": "success" if result.success else "error",
                     "result": result.data,
-                    "success": result.success,
                 }
             ],
             "staged_actions": [],
         }
     }
+
+
+def _format_tool_result(tool_name: str, data: dict | None) -> str:
+    """Turn raw tool output into readable assistant text."""
+    if not data:
+        return f"Ran {tool_name} — no data returned."
+
+    if tool_name == "universe_scan":
+        candidates = data.get("candidates", [])
+        lines = [f"Found {len(candidates)} tickers in the scan universe:\n"]
+        for i, t in enumerate(candidates):
+            lines.append(f"  {i+1}. {t}")
+        lines.append(
+            "\nAsk me to analyze or compose a strategy for any of these tickers."
+        )
+        return "\n".join(lines)
+
+    if tool_name == "technical_analysis":
+        t = data.get("ticker", "?")
+        lines = [f"Technical analysis for {t}:\n"]
+        for k, v in data.items():
+            if k == "ticker":
+                continue
+            lines.append(f"  {k}: {v}")
+        return "\n".join(lines)
+
+    if tool_name == "characterize_ticker":
+        t = data.get("ticker", "?")
+        lines = [f"Profile for {t}:\n"]
+        for k, v in data.items():
+            if k == "ticker":
+                continue
+            lines.append(f"  {k}: {v}")
+        return "\n".join(lines)
+
+    if tool_name == "author_strategy":
+        spec = data.get("spec", {})
+        thesis = spec.get("thesis", "")
+        ticker = (spec.get("tickers") or ["?"])[0]
+        return (
+            f"Composed a strategy spec for {ticker}:\n\n"
+            f"Thesis: {thesis}\n"
+            f"Entry: {spec.get('entry', {}).get('when', {})}\n"
+            f"Exits: {len(spec.get('exits', []))} exit rules\n"
+            f"Risk: max position {spec.get('risk', {}).get('max_position_pct', '?')}%\n\n"
+            f"Run 'backtest' or 'validate' to test this spec."
+        )
+
+    if tool_name == "backtest":
+        return (
+            f"Backtest results:\n\n"
+            f"  Sharpe ratio: {data.get('sharpe', 0):.2f}\n"
+            f"  Max drawdown: {data.get('max_drawdown', 0):.1%}\n"
+            f"  Net edge: {data.get('net_edge', 0):.2%}\n"
+            f"  Trades: {data.get('n_trades', 0)}\n"
+            f"  Win rate: {data.get('win_rate', 0):.0%}"
+        )
+
+    if tool_name == "validate":
+        passed = data.get("passed", False)
+        return (
+            f"Validation {'PASSED' if passed else 'FAILED'}:\n\n"
+            f"  DSR: {data.get('deflated_sharpe', 0):.3f}\n"
+            f"  PBO: {data.get('pbo', 0):.3f}"
+        )
+
+    if tool_name == "query_book":
+        positions = data.get("positions", [])
+        equity = data.get("equity", 0)
+        exposure = data.get("gross_exposure", 0)
+        lines = [f"Portfolio: ${equity:,.0f} equity, ${exposure:,.0f} gross exposure\n"]
+        if positions:
+            for p in positions:
+                lines.append(f"  {p.get('symbol', '?')}: {p.get('qty', 0)} shares")
+        else:
+            lines.append("  No open positions.")
+        return "\n".join(lines)
+
+    if tool_name in ("pause_deployment", "flatten_deployment"):
+        dep_id = data.get("deployment_id", "?")
+        status = data.get("status", "?")
+        return f"Deployment {dep_id[:8]}… is now {status}."
+
+    # Generic fallback
+    import json
+    return f"Result from {tool_name}:\n```\n{json.dumps(data, indent=2, default=str)}\n```"
 
 
 @router.post("/actions/{action_id}/confirm")

@@ -1,12 +1,25 @@
 import { useState, useRef, useEffect } from 'react'
 import { apiFetch, apiMutate } from '../lib/api'
 
+interface ToolCall {
+  name: string
+  status: string
+  result?: unknown
+}
+
+interface StagedAction {
+  id: string
+  tool_name: string
+  description: string
+  status: string
+}
+
 interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
-  tool_calls?: { name: string; status: string }[]
-  staged_actions?: { id: string; action: string; params: Record<string, unknown>; status: string }[]
+  tool_calls?: ToolCall[]
+  staged_actions?: StagedAction[]
 }
 
 export function AssistantPage() {
@@ -110,7 +123,11 @@ export function AssistantPage() {
               {msg.tool_calls && msg.tool_calls.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1">
                   {msg.tool_calls.map((tc, i) => (
-                    <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-indigo/10 text-indigo">{tc.name}</span>
+                    <span key={i} className={`text-xs px-2 py-0.5 rounded-full ${
+                      tc.status === 'success' ? 'bg-gain/10 text-gain' : 'bg-loss/10 text-loss'
+                    }`}>
+                      {tc.status === 'success' ? '✓' : '✗'} {tc.name}
+                    </span>
                   ))}
                 </div>
               )}
@@ -119,7 +136,7 @@ export function AssistantPage() {
                   {msg.staged_actions.map(sa => (
                     <div key={sa.id} className="border border-amber rounded-lg p-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium text-amber">{sa.action}</span>
+                        <span className="text-xs font-medium text-amber">{sa.description || sa.tool_name}</span>
                         {sa.status === 'pending' ? (
                           <div className="flex gap-1">
                             <button

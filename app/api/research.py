@@ -34,7 +34,18 @@ async def start_research_run(body: ResearchRunBody, db: DB, user: CurrentUser) -
             f"{goal} opportunity in {c['ticker']}", {"ticker": c["ticker"]}
         )
         concerns = await state.author.red_team(spec)
-        specs.append({"spec": spec, "concerns": concerns, "ticker": c["ticker"]})
+
+        # Register each candidate strategy so it appears in Review Queue
+        strategy = await state.registry.create(spec, user_id=user.get("id", ""))
+        strategy["status"] = "pending_review"
+        strategy["red_team"] = concerns
+
+        specs.append({
+            "strategy_id": strategy["id"],
+            "spec": spec,
+            "concerns": concerns,
+            "ticker": c["ticker"],
+        })
 
     run = {
         "id": run_id,
