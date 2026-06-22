@@ -17,7 +17,7 @@ export function LoginPage() {
   }, [user, navigate])
 
   useEffect(() => {
-    apiFetch<{ configured: boolean }>('/auth/setup-status')
+    apiFetch<{ configured: boolean }>('/api/auth/setup-status')
       .then(r => setIsSetup(r.configured))
       .catch(() => {})
   }, [])

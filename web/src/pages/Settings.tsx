@@ -85,7 +85,7 @@ export function SettingsPage() {
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      await apiFetch('/auth/change-password', {
+      await apiFetch('/api/auth/change-password', {
         method: 'POST',
         body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
       })

@@ -50,7 +50,7 @@ services:
       - ./web/src:/app/src
       - ./web/index.html:/app/index.html
     environment:
-      VITE_API_URL: http://localhost:8000
+      API_PROXY_TARGET: http://api:8000
 
   postgres:
     image: postgres:16-alpine

@@ -92,9 +92,9 @@ class ShortTermEquityDomain:
         self._llm = llm
 
     async def scan(self, goal: str, context: dict) -> list[dict]:
-        from app.modules.data.providers import SampleDataProvider
+        from app.modules.data.providers import create_data_provider
 
-        provider = SampleDataProvider()
+        provider = create_data_provider()
         universe = await provider.universe()
 
         # When an LLM is available, ask it to score and rank candidates

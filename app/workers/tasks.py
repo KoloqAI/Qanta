@@ -29,7 +29,7 @@ async def run_backtest(
 ) -> dict:
     from app.core.dsl.parser import parse_spec
     from app.modules.backtest.service import BacktesterImpl
-    from app.modules.data.providers import SampleDataProvider
+    from app.modules.data.providers import create_data_provider, recent_window
     from datetime import datetime
 
     spec_raw = kwargs.get("spec", {})
@@ -38,10 +38,11 @@ async def run_backtest(
         return {"strategy_version_id": strategy_version_id, "status": "failed",
                 "errors": [e.message for e in (parse_result.errors or [])]}
 
-    provider = SampleDataProvider()
+    provider = create_data_provider()
     ticker = parse_result.spec.tickers[0] if parse_result.spec.tickers else "AAPL"
-    start = datetime.fromisoformat(window.get("start", "2020-01-01"))
-    end = datetime.fromisoformat(window.get("end", "2023-01-01"))
+    default_start, default_end = recent_window(700)
+    start = datetime.fromisoformat(window["start"]) if window.get("start") else default_start
+    end = datetime.fromisoformat(window["end"]) if window.get("end") else default_end
     bars = await provider.bars(ticker, start, end)
 
     bt = BacktesterImpl()
@@ -59,17 +60,17 @@ async def run_backtest(
 async def run_validation(ctx: dict, strategy_version_id: str, **kwargs: Any) -> dict:
     from app.core.dsl.parser import parse_spec
     from app.modules.validation.service import ValidationHarnessImpl
-    from app.modules.data.providers import SampleDataProvider
-    from datetime import datetime
+    from app.modules.data.providers import create_data_provider, recent_window
 
     spec_raw = kwargs.get("spec", {})
     parse_result = parse_spec(spec_raw)
     if not parse_result.success:
         return {"strategy_version_id": strategy_version_id, "status": "failed"}
 
-    provider = SampleDataProvider()
+    provider = create_data_provider()
     ticker = parse_result.spec.tickers[0] if parse_result.spec.tickers else "AAPL"
-    bars = await provider.bars(ticker, datetime(2018, 1, 1), datetime(2023, 1, 1))
+    start, end = recent_window(700)
+    bars = await provider.bars(ticker, start, end)
 
     harness = ValidationHarnessImpl()
     report = await harness.validate(parse_result.spec, bars, n_eff=kwargs.get("n_eff", 1))

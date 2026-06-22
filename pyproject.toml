@@ -33,7 +33,6 @@ dependencies = [
     "numpy>=1.26,<2",
     "scipy>=1.14,<2",
     "pandas>=2.2,<3",
-    "openbb>=4.3,<5",
     # Market calendar
     "exchange-calendars>=4.5,<5",
     # HTTP client
@@ -55,6 +54,9 @@ dev = [
     "ruff>=0.7,<1",
     "mypy>=1.13,<2",
 ]
+openbb = [
+    "openbb>=4.3,<5",
+]
 nautilus = [
     "nautilus_trader>=1.207,<2",
 ]
@@ -64,6 +66,9 @@ pybroker = [
 notifications = [
     "python-telegram-bot>=21,<22",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

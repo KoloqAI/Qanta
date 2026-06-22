@@ -7,14 +7,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    apiFetch<User>('/auth/me')
+    apiFetch<User>('/api/auth/me')
       .then(setUser)
       .catch(() => setUser(null))
       .finally(() => setLoading(false))
   }, [])
 
   const login = useCallback(async (email: string, password: string) => {
-    const res = await apiFetch<{ user: User }>('/auth/login', {
+    const res = await apiFetch<{ user: User }>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     })
@@ -22,12 +22,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const logout = useCallback(async () => {
-    await apiFetch('/auth/logout', { method: 'POST' })
+    await apiFetch('/api/auth/logout', { method: 'POST' })
     setUser(null)
   }, [])
 
   const register = useCallback(async (email: string, password: string) => {
-    const res = await apiFetch<User>('/auth/register', {
+    const res = await apiFetch<User>('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     })

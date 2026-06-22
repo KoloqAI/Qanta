@@ -155,8 +155,7 @@ class EvolutionLoopImpl:
         from app.modules.research.service import ShortTermEquityDomain, StrategyAuthorImpl
         from app.core.dsl.parser import parse_spec
         from app.modules.validation.service import ValidationHarnessImpl
-        from app.modules.data.providers import SampleDataProvider
-        from datetime import datetime as dt
+        from app.modules.data.providers import create_data_provider, recent_window
 
         survivors: list[dict] = []
         trials_run = 0
@@ -164,7 +163,7 @@ class EvolutionLoopImpl:
         domain = ShortTermEquityDomain()
         author = StrategyAuthorImpl()
         harness = ValidationHarnessImpl()
-        provider = SampleDataProvider()
+        provider = create_data_provider()
 
         # Scan for candidate tickers
         candidates = await domain.scan("short-term momentum and mean-reversion", {})
@@ -189,9 +188,8 @@ class EvolutionLoopImpl:
                 continue
 
             # Fetch bars for validation
-            bars = await provider.bars(
-                ticker, dt(2018, 1, 1), dt(2023, 1, 1)
-            )
+            val_start, val_end = recent_window(700)
+            bars = await provider.bars(ticker, val_start, val_end)
 
             # Run validation gauntlet with accumulated N_eff
             self._n_eff += 1

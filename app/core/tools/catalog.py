@@ -11,9 +11,9 @@ class UniverseScanTool(Tool):
     permission = Permission.READ
 
     async def invoke(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-        from app.modules.data.providers import SampleDataProvider
+        from app.modules.data.providers import create_data_provider
 
-        provider = SampleDataProvider()
+        provider = create_data_provider()
         universe = await provider.universe()
         return ToolResult(success=True, data={"candidates": universe})
 
@@ -24,13 +24,13 @@ class TechnicalAnalysisTool(Tool):
     permission = Permission.READ
 
     async def invoke(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-        from app.modules.data.providers import SampleDataProvider
+        from app.modules.data.providers import create_data_provider, recent_window
         from app.modules.data.features import FeatureComputer as fc
-        from datetime import datetime
 
         ticker = args.get("ticker", "AAPL")
-        provider = SampleDataProvider()
-        bars = await provider.bars(ticker, datetime(2022, 1, 1), datetime(2023, 12, 31))
+        provider = create_data_provider()
+        start, end = recent_window(400)
+        bars = await provider.bars(ticker, start, end)
         if bars.empty:
             return ToolResult(success=False, data={"error": "No data"})
 
@@ -53,14 +53,14 @@ class CharacterizeTickerTool(Tool):
     permission = Permission.READ
 
     async def invoke(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-        from app.modules.data.providers import SampleDataProvider
+        from app.modules.data.providers import create_data_provider, recent_window
         from app.modules.data.features import FeatureComputer as fc
-        from datetime import datetime
         import numpy as np
 
         ticker = args.get("ticker", "AAPL")
-        provider = SampleDataProvider()
-        bars = await provider.bars(ticker, datetime(2020, 1, 1), datetime(2023, 12, 31))
+        provider = create_data_provider()
+        start, end = recent_window(700)
+        bars = await provider.bars(ticker, start, end)
         if bars.empty:
             return ToolResult(success=False, data={"error": "No data"})
 
@@ -124,8 +124,7 @@ class BacktestTool(Tool):
     async def invoke(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         from app.core.dsl.parser import parse_spec
         from app.modules.backtest.service import BacktesterImpl
-        from app.modules.data.providers import SampleDataProvider
-        from datetime import datetime
+        from app.modules.data.providers import create_data_provider, recent_window
 
         spec_raw = args.get("spec", {})
         result = parse_spec(spec_raw)
@@ -135,9 +134,10 @@ class BacktestTool(Tool):
                 data={"errors": [e.message for e in (result.errors or [])]},
             )
 
-        provider = SampleDataProvider()
+        provider = create_data_provider()
         ticker = result.spec.tickers[0] if result.spec.tickers else "AAPL"
-        bars = await provider.bars(ticker, datetime(2019, 1, 1), datetime(2023, 12, 31))
+        start, end = recent_window(700)
+        bars = await provider.bars(ticker, start, end)
 
         bt = BacktesterImpl()
         bt_result = await bt.run(result.spec, bars)
@@ -162,8 +162,7 @@ class ValidateTool(Tool):
     async def invoke(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         from app.core.dsl.parser import parse_spec
         from app.modules.validation.service import ValidationHarnessImpl
-        from app.modules.data.providers import SampleDataProvider
-        from datetime import datetime
+        from app.modules.data.providers import create_data_provider, recent_window
 
         spec_raw = args.get("spec", {})
         parse_result = parse_spec(spec_raw)
@@ -173,9 +172,10 @@ class ValidateTool(Tool):
                 data={"errors": [e.message for e in (parse_result.errors or [])]},
             )
 
-        provider = SampleDataProvider()
+        provider = create_data_provider()
         ticker = parse_result.spec.tickers[0] if parse_result.spec.tickers else "AAPL"
-        bars = await provider.bars(ticker, datetime(2018, 1, 1), datetime(2023, 12, 31))
+        start, end = recent_window(700)
+        bars = await provider.bars(ticker, start, end)
 
         harness = ValidationHarnessImpl()
         report = await harness.validate(parse_result.spec, bars, n_eff=args.get("n_eff", 1))

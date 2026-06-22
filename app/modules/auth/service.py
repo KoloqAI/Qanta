@@ -56,6 +56,8 @@ class AuthServiceImpl:
         )
         self._db.add(user_settings)
 
+        # Flush user + settings first so the FK in audit_log resolves correctly.
+        await self._db.flush()
         await self._audit(user.id, "register", "user", user.id)
         await self._db.commit()
         return {"id": user.id, "email": user.email}

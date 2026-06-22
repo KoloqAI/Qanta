@@ -38,7 +38,7 @@ async def get_connections(user: CurrentUser) -> dict:
             "connected": False,  # Paper broker -- no real connection
         },
         "data": {
-            "provider": "sample",  # Using SampleDataProvider in dev
+            "provider": "polygon" if settings.polygon_api_key else "sample",
             "status": "ok",
         },
         "redis": {

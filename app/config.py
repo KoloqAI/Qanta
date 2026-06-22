@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     aws_bedrock_region: str = ""
 
+    # Market data (leave blank to use the synthetic SampleDataProvider)
+    polygon_api_key: str = ""
+    polygon_base_url: str = "https://api.polygon.io"
+    openbb_api_key: str = ""
+    databento_api_key: str = ""
+
     # Broker (execution scope only)
     ibkr_host: str = "127.0.0.1"
     ibkr_port: int = 4002
