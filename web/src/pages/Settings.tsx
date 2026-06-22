@@ -54,31 +54,92 @@ export function SettingsPage() {
 
   const { data: connections } = useQuery<Connection[]>({
     queryKey: ['settings', 'connections'],
-    queryFn: () => apiFetch('/api/settings/connections'),
+    queryFn: async () => {
+      const d = await apiFetch('/api/settings/connections')
+      return [
+        {
+          name: 'IBKR (Broker)',
+          description: `${d.broker?.host ?? 'localhost'}:${d.broker?.port ?? 4002}`,
+          status: d.broker?.connected ? 'Connected' : 'Not connected',
+        },
+        {
+          name: 'Market Data',
+          description: `Provider: ${d.data?.provider ?? 'sample'}`,
+          status: d.data?.status === 'ok' ? 'Active' : (d.data?.status ?? 'Unknown'),
+        },
+        {
+          name: 'Redis',
+          description: d.redis?.url ?? 'Not configured',
+          status: d.redis?.url ? 'Configured' : 'Not configured',
+        },
+        {
+          name: 'Database',
+          description: d.database?.url ?? 'Not configured',
+          status: d.database?.url ? 'Configured' : 'Not configured',
+        },
+      ]
+    },
     enabled: tab === 'connections',
   })
 
   const { data: models } = useQuery<ModelTier[]>({
     queryKey: ['settings', 'models'],
-    queryFn: () => apiFetch('/api/settings/models'),
+    queryFn: async () => {
+      const d = await apiFetch('/api/settings/models')
+      const tiers: Record<string, { primary?: string; fallback?: string }> = d.tiers ?? {}
+      return Object.entries(tiers).map(([tierName, cfg]) => ({
+        tier: tierName.charAt(0).toUpperCase() + tierName.slice(1),
+        provider: cfg.primary?.split('/')[0] ?? '',
+        model: cfg.primary ?? '',
+        status: cfg.primary ? 'Configured' : 'Not configured',
+      }))
+    },
     enabled: tab === 'models',
   })
 
   const { data: risk } = useQuery<Guardrail[]>({
     queryKey: ['settings', 'risk'],
-    queryFn: () => apiFetch('/api/settings/risk'),
+    queryFn: async () => {
+      const d = await apiFetch('/api/settings/risk')
+      const g = d.guardrails ?? {}
+      return [
+        { label: 'Per-Trade Stop', value: g.per_trade_stop_pct != null ? `${g.per_trade_stop_pct}%` : 'N/A' },
+        { label: 'Max Position', value: g.max_position_pct != null ? `${g.max_position_pct}%` : 'N/A' },
+        { label: 'Max Gross Exposure', value: g.max_gross_exposure_pct != null ? `${g.max_gross_exposure_pct}%` : 'N/A' },
+        { label: 'Daily Drawdown Kill', value: g.daily_drawdown_kill_pct != null ? `${g.daily_drawdown_kill_pct}%` : 'N/A' },
+        { label: 'PDT Equity Min', value: g.pdt_equity_minimum != null ? `$${Number(g.pdt_equity_minimum).toLocaleString()}` : 'N/A' },
+        { label: 'Kill Switch', value: d.kill_switch_active ? 'ACTIVE' : 'Inactive' },
+      ]
+    },
     enabled: tab === 'risk',
   })
 
   const { data: validation } = useQuery<ValidationThreshold[]>({
     queryKey: ['settings', 'validation'],
-    queryFn: () => apiFetch('/api/settings/validation'),
+    queryFn: async () => {
+      const d = await apiFetch('/api/settings/validation')
+      const t = d.thresholds ?? {}
+      return [
+        { label: 'DSR Threshold', value: t.deflated_sharpe_min != null ? `> ${t.deflated_sharpe_min}` : 'N/A' },
+        { label: 'PBO Threshold', value: t.pbo_max != null ? `< ${t.pbo_max}` : 'N/A' },
+        { label: 'Min Trades', value: t.min_trades != null ? `>= ${t.min_trades}` : 'N/A' },
+        { label: 'Cost-Adjusted Edge', value: t.cost_adjusted_edge_ratio != null ? `>= ${Math.round(t.cost_adjusted_edge_ratio * 100)}%` : 'N/A' },
+        { label: 'Peer Hit Rate', value: t.peer_hit_rate_min != null ? `>= ${Math.round(t.peer_hit_rate_min * 100)}%` : 'N/A' },
+        { label: 'Degradation Slope', value: t.deg_slope_min != null ? `>= ${t.deg_slope_min}` : 'N/A' },
+      ]
+    },
     enabled: tab === 'validation',
   })
 
   const { data: tools } = useQuery<ToolModule[]>({
     queryKey: ['settings', 'tools'],
-    queryFn: () => apiFetch('/api/settings/tools'),
+    queryFn: async () => {
+      const d = await apiFetch('/api/settings/tools')
+      return (d.tools ?? []).map((t: { name: string }) => ({
+        name: t.name,
+        enabled: true,
+      }))
+    },
     enabled: tab === 'tools',
   })
 
