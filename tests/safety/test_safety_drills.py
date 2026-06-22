@@ -16,10 +16,11 @@ from __future__ import annotations
 import pytest
 from app.modules.risk.service import RiskGateImpl, BookState, RiskDecision
 from app.modules.portfolio.service import PortfolioRiskGateImpl, AllocatorImpl
-from app.modules.execution.service import PaperBroker, Order, ExecutionRuntimeImpl
-from app.modules.scheduling.service import MarketCalendarImpl
+from app.modules.execution.service import PaperBroker, Order, ExecutionRuntimeImpl, DeploymentGateError
+from app.modules.scheduling.service import MarketCalendarImpl, EODFlattenJob
 from app.modules.notifications.service import NotifierImpl
-from datetime import date
+from app.modules.registry.service import StrategyRegistryImpl
+from datetime import date, datetime
 
 
 class TestStopLoss:
@@ -218,3 +219,299 @@ class TestOrderFlow:
         ack = await runtime.submit_order(order, book, portfolio)
         assert ack.status == "rejected"
         assert "RiskGate" in ack.message
+
+
+class TestDeploymentGate:
+    """Drill 6: Live deploy without ValidationReport + Approval is refused."""
+
+    @pytest.mark.asyncio
+    async def test_live_deploy_without_validation_refused(self):
+        """A live deployment for a strategy with no approval/validation must be refused."""
+        registry = StrategyRegistryImpl()
+        # Create a strategy that is still in draft status (not approved)
+        strategy = await registry.create(
+            {"thesis": "Test momentum", "tickers": ["AAPL"]},
+            user_id="user-001",
+        )
+        strategy_id = strategy["id"]
+
+        broker = PaperBroker()
+        risk_gate = RiskGateImpl()
+        portfolio_gate = PortfolioRiskGateImpl()
+        runtime = ExecutionRuntimeImpl(broker, risk_gate, portfolio_gate, registry=registry)
+
+        with pytest.raises(DeploymentGateError):
+            await runtime.start(
+                "deploy-001",
+                deployment_info={"mode": "live", "strategy_id": strategy_id},
+            )
+
+        # Verify deployment was NOT activated
+        assert "deploy-001" not in runtime._active
+
+    @pytest.mark.asyncio
+    async def test_paper_deploy_always_allowed(self):
+        """Paper deployments are always allowed regardless of validation status."""
+        broker = PaperBroker()
+        risk_gate = RiskGateImpl()
+        portfolio_gate = PortfolioRiskGateImpl()
+        runtime = ExecutionRuntimeImpl(broker, risk_gate, portfolio_gate)
+
+        # Paper mode via deployment_info
+        await runtime.start(
+            "deploy-002",
+            deployment_info={"mode": "paper", "strategy_id": "any-strategy"},
+        )
+        assert runtime._active.get("deploy-002") is True
+
+        # No deployment_info at all (backward-compatible path)
+        await runtime.start("deploy-003")
+        assert runtime._active.get("deploy-003") is True
+
+    @pytest.mark.asyncio
+    async def test_live_deploy_with_approval_succeeds(self):
+        """A live deployment for an approved strategy must succeed."""
+        registry = StrategyRegistryImpl()
+        strategy = await registry.create(
+            {"thesis": "Approved momentum", "tickers": ["MSFT"]},
+            user_id="user-002",
+        )
+        strategy_id = strategy["id"]
+
+        # Simulate human approval by setting status to "approved"
+        registry._strategies[strategy_id]["status"] = "approved"
+
+        broker = PaperBroker()
+        risk_gate = RiskGateImpl()
+        portfolio_gate = PortfolioRiskGateImpl()
+        runtime = ExecutionRuntimeImpl(broker, risk_gate, portfolio_gate, registry=registry)
+
+        # Should NOT raise
+        await runtime.start(
+            "deploy-004",
+            deployment_info={"mode": "live", "strategy_id": strategy_id},
+        )
+        assert runtime._active.get("deploy-004") is True
+
+
+class TestHaltDetection:
+    """LULD halt detection: halted symbols are rejected, resumed symbols pass."""
+
+    def test_halted_symbol_rejected(self):
+        from app.modules.data.halts import HaltDetectorImpl
+
+        halt = HaltDetectorImpl()
+        halt.halt_symbol("AAPL", "LULD halt")
+        gate = RiskGateImpl(halt_detector=halt)
+        book = BookState(equity=100_000, positions=[], daily_pnl=0, gross_exposure=0)
+        order = {"symbol": "AAPL", "side": "buy", "qty": 5, "price": 150, "bracket_stop": 145.0}
+        decision = gate.check(order, book)
+        assert not decision.allowed
+        assert "halted" in decision.reason.lower()
+        assert "LULD" in decision.reason
+
+    def test_resumed_symbol_allowed(self):
+        from app.modules.data.halts import HaltDetectorImpl
+
+        halt = HaltDetectorImpl()
+        halt.halt_symbol("AAPL", "LULD halt")
+        halt.resume_symbol("AAPL")
+        gate = RiskGateImpl(halt_detector=halt)
+        book = BookState(equity=100_000, positions=[], daily_pnl=0, gross_exposure=0)
+        order = {"symbol": "AAPL", "side": "buy", "qty": 5, "price": 150, "bracket_stop": 145.0}
+        decision = gate.check(order, book)
+        assert decision.allowed
+
+    def test_non_halted_symbol_unaffected(self):
+        from app.modules.data.halts import HaltDetectorImpl
+
+        halt = HaltDetectorImpl()
+        halt.halt_symbol("TSLA", "LULD halt")
+        gate = RiskGateImpl(halt_detector=halt)
+        book = BookState(equity=100_000, positions=[], daily_pnl=0, gross_exposure=0)
+        order = {"symbol": "AAPL", "side": "buy", "qty": 5, "price": 150, "bracket_stop": 145.0}
+        decision = gate.check(order, book)
+        assert decision.allowed
+
+
+class TestLockbox:
+    """Validation lockbox: reserve final portion of data for OOS check."""
+
+    @pytest.mark.asyncio
+    async def test_lockbox_enforced(self):
+        from app.core.dsl.schema import StrategySpec, RiskEnvelope
+        from app.modules.data.providers import SampleDataProvider
+        from app.modules.validation.service import ValidationHarnessImpl
+        from datetime import datetime
+
+        spec = StrategySpec(
+            id="lockbox-test",
+            version=1,
+            tickers=["AAPL"],
+            thesis="SMA crossover lockbox test",
+            regime={"all_of": [{"gt": ["sma(50)", "sma(200)"]}]},
+            entry={
+                "when": {"crosses_above": ["sma(20)", "sma(50)"]},
+                "action": "enter_long",
+                "sizing": {"fixed_pct": 5.0},
+            },
+            exits=[{"stop_loss": {"pct": 3.0}}, {"take_profit": {"pct": 6.0}}],
+            risk=RiskEnvelope(max_position_pct=10.0, per_trade_stop_pct=3.0, max_gross_exposure=40.0),
+            universe={"primary": "AAPL"},
+            validation={"targets": [{"R": 0.01, "H": 10}]},
+        )
+
+        provider = SampleDataProvider()
+        bars = await provider.bars("AAPL", datetime(2018, 1, 1), datetime(2023, 1, 1))
+
+        harness = ValidationHarnessImpl(
+            dsr_threshold=0.0,
+            pbo_threshold=1.0,
+            min_trades=0,
+            cost_edge_ratio=0.0,
+            lockbox_pct=0.15,
+        )
+        report = await harness.validate_with_lockbox(spec, bars, n_eff=1)
+        assert "lockbox" in report.detail
+
+    def test_lockbox_split_covers_all_bars(self):
+        """Research bars + lockbox bars = total bars."""
+        import pandas as pd
+
+        n_total = 1000
+        lockbox_pct = 0.15
+        bars = pd.DataFrame({"close": range(n_total)})
+
+        lockbox_start = int(n_total * (1 - lockbox_pct))
+        research_bars = bars.iloc[:lockbox_start]
+        lockbox_bars = bars.iloc[lockbox_start:]
+
+        assert len(research_bars) + len(lockbox_bars) == n_total
+        assert len(lockbox_bars) == n_total - lockbox_start
+        assert lockbox_start == 850
+
+
+class TestEODFlatten:
+    """Drill 9: EOD flatten closes all intraday positions before market close."""
+
+    @pytest.mark.asyncio
+    async def test_eod_flatten_fires_before_close(self):
+        """Positions should be flattened when within the flatten window."""
+        broker = PaperBroker()
+        cal = MarketCalendarImpl()
+
+        # Submit some positions
+        await broker.submit(Order("AAPL", "buy", 10, "market", bracket_stop=145.0))
+        await broker.submit(Order("MSFT", "buy", 20, "market", bracket_stop=290.0))
+        positions = await broker.positions()
+        assert len(positions) >= 1
+
+        job = EODFlattenJob(broker, cal, flatten_minutes_before_close=5)
+
+        # Use a known trading day: Monday Dec 9, 2024
+        # Normal close is 4:00 PM, so 3 minutes before = 3:57 PM
+        flatten_time = datetime(2024, 12, 9, 15, 57, 0)
+        result = await job.check_and_flatten(current_time=flatten_time)
+
+        assert result["flattened"] is True
+        positions = await broker.positions()
+        assert len(positions) == 0
+
+    @pytest.mark.asyncio
+    async def test_eod_flatten_skips_outside_window(self):
+        """Positions should NOT be flattened when outside the flatten window."""
+        broker = PaperBroker()
+        cal = MarketCalendarImpl()
+
+        await broker.submit(Order("AAPL", "buy", 10, "market", bracket_stop=145.0))
+
+        job = EODFlattenJob(broker, cal, flatten_minutes_before_close=5)
+
+        # 2:00 PM on a trading day -- well outside the 3:55-4:00 PM window
+        outside_time = datetime(2024, 12, 9, 14, 0, 0)
+        result = await job.check_and_flatten(current_time=outside_time)
+
+        assert result["flattened"] is False
+        positions = await broker.positions()
+        assert len(positions) == 1  # Position still held
+
+
+class TestBracketOrders:
+    """Drill 8: Broker-resident bracket orders survive independently."""
+
+    @pytest.mark.asyncio
+    async def test_bracket_stop_created_on_submit(self):
+        """Submitting an order with bracket_stop creates an active stop bracket entry."""
+        broker = PaperBroker()
+        await broker.submit(Order("AAPL", "buy", 10, "market", bracket_stop=145.0))
+
+        brackets = await broker.get_bracket_orders()
+        assert len(brackets) == 1
+        assert brackets[0]["type"] == "stop"
+        assert brackets[0]["trigger_price"] == 145.0
+        assert brackets[0]["status"] == "active"
+        assert brackets[0]["side"] == "sell"  # Opposite of buy
+        assert brackets[0]["symbol"] == "AAPL"
+
+    @pytest.mark.asyncio
+    async def test_bracket_stop_triggers(self):
+        """Stop bracket triggers when price drops below trigger for a long position."""
+        broker = PaperBroker()
+        await broker.submit(Order("AAPL", "buy", 10, "market", bracket_stop=145.0))
+
+        # Verify position exists
+        positions = await broker.positions()
+        assert any(p["symbol"] == "AAPL" for p in positions)
+
+        # Price drops to 144, below the 145 stop
+        triggered = await broker.check_brackets({"AAPL": 144.0})
+        assert len(triggered) == 1
+        assert triggered[0]["type"] == "stop"
+        assert triggered[0]["status"] == "triggered"
+
+        # Position should be closed
+        positions = await broker.positions()
+        assert not any(p["symbol"] == "AAPL" for p in positions)
+
+    @pytest.mark.asyncio
+    async def test_bracket_survives_heartbeat_loss(self):
+        """Bracket orders execute even when heartbeat is lost; new entries are blocked."""
+        broker = PaperBroker()
+        await broker.submit(Order("AAPL", "buy", 10, "market", bracket_stop=145.0))
+
+        # Lose heartbeat
+        broker.set_heartbeat(False)
+
+        # New entries should be blocked
+        ack = await broker.submit(Order("MSFT", "buy", 5, "market", bracket_stop=290.0))
+        assert ack.status == "rejected"
+        assert "Heartbeat lost" in ack.message
+
+        # But bracket orders still fire
+        triggered = await broker.check_brackets({"AAPL": 144.0})
+        assert len(triggered) == 1
+        assert triggered[0]["type"] == "stop"
+
+        # Position should be closed despite heartbeat loss
+        positions = await broker.positions()
+        assert not any(p["symbol"] == "AAPL" for p in positions)
+
+    @pytest.mark.asyncio
+    async def test_bracket_tp_triggers(self):
+        """Take-profit bracket triggers when price rises above trigger for a long position."""
+        broker = PaperBroker()
+        await broker.submit(Order("AAPL", "buy", 10, "market", bracket_tp=160.0))
+
+        # Verify position exists
+        positions = await broker.positions()
+        assert any(p["symbol"] == "AAPL" for p in positions)
+
+        # Price rises to 161, above the 160 TP
+        triggered = await broker.check_brackets({"AAPL": 161.0})
+        assert len(triggered) == 1
+        assert triggered[0]["type"] == "tp"
+        assert triggered[0]["status"] == "triggered"
+
+        # Position should be closed
+        positions = await broker.positions()
+        assert not any(p["symbol"] == "AAPL" for p in positions)

@@ -34,15 +34,15 @@ quanta/
 │   │   └── dsl/                    # primitives, schema, parser/type-checker, interpreter
 │   ├── modules/
 │   │   ├── auth/                   # M0  users, sessions, authz
-│   │   ├── data/                   # M1  MarketDataProvider impls, FeatureStore, corp-actions, halts
+│   │   ├── data/                   # M1  MarketDataProvider impls, FeatureStore, corp-actions, halts (HaltDetectorImpl)
 │   │   ├── research/               # M2  LangGraph agent, ResearchDomain, StrategyAuthor, LLMProvider (LiteLLM)
 │   │   ├── registry/               # M3  Strategy + versions + lifecycle
 │   │   ├── backtest/               # M4  Backtester (nautilus), cost model, (optional PyBroker)
 │   │   ├── validation/             # M5  walk-forward, DSR, PBO, robustness, confidence, ledger, lockbox, verification suite
-│   │   ├── execution/              # M6  ExecutionRuntime (nautilus), Broker impls (IBKR/Paper), broker-resident brackets, heartbeat
+│   │   ├── execution/              # M6  ExecutionRuntime, Broker impls (IBKR/Paper), broker-resident brackets, heartbeat watchdog, DeploymentGate
 │   │   ├── risk/                   # M7  RiskGate (per-order) + kill-switch
 │   │   ├── portfolio/              # Allocator + PortfolioRiskGate (aggregate caps)
-│   │   ├── scheduling/             # Scheduler + MarketCalendar (windows, EOD flatten, job cadence)
+│   │   ├── scheduling/             # Scheduler + MarketCalendar (windows, EOD flatten via EODFlattenJob, job cadence)
 │   │   ├── notifications/          # Notifier (email/Telegram/SMS) + watchdog/dead-man's-switch
 │   │   ├── monitoring/             # M8  perf, decay, calibration, audit log
 │   │   ├── evolution/              # scheduled promote/retire/discover/propose; meta-lockbox

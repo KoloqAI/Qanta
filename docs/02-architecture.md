@@ -9,7 +9,7 @@
 6. Same artifact everywhere — identical containers local and cloud; config differs, not code.
 
 ## Stack (pin these versions)
-- Python 3.12 · FastAPI 0.115+ · Pydantic v2 · SQLAlchemy 2 + Alembic · Arq + Redis 7 (async, lightweight; Celery only if you outgrow it).
+- Python 3.12 · FastAPI 0.115+ · Pydantic v2 · SQLAlchemy 2 + Alembic · Arq + Redis 7 (async, lightweight).
 - LLM gateway: LiteLLM (routes to Ollama local + Bedrock/Vertex/Azure + direct API). Agent orchestration: LangGraph.
 - Data: OpenBB ODP + IBKR market data (or a dedicated vendor — Polygon/Databento) behind a `MarketDataProvider` interface; swap feeds without touching strategy/engine code.
 - Engine: nautilus_trader — unified, deterministic, event-driven engine for BOTH backtest and live (research-to-live parity; collapses the old realism-check + execution into one engine, eliminating backtest-vs-live drift). Pre-2.0, so pin versions and track release notes. PyBroker (NumPy+Numba; walk-forward + bootstrap) is OPTIONAL, added only for fast vectorized parameter sweeps if nautilus's event-driven search is too slow for our volume. backtrader and free vectorbt are maintenance-only/stale in 2026 — do not use. All behind `Backtester`/`Broker` interfaces, so swapping is config, not a rewrite.

@@ -37,11 +37,13 @@ class ValidationHarnessImpl:
         pbo_threshold: float = 0.20,
         min_trades: int = 100,
         cost_edge_ratio: float = 0.50,
+        lockbox_pct: float = 0.15,
     ) -> None:
         self._dsr_threshold = dsr_threshold
         self._pbo_threshold = pbo_threshold
         self._min_trades = min_trades
         self._cost_edge_ratio = cost_edge_ratio
+        self._lockbox_pct = lockbox_pct
 
     async def validate(
         self,
@@ -115,6 +117,61 @@ class ValidationHarnessImpl:
                 "frictionless_edge": result.frictionless_edge,
             },
         )
+
+    async def validate_with_lockbox(
+        self,
+        spec: StrategySpec,
+        bars: pd.DataFrame,
+        n_eff: int = 1,
+        n_splits: int = 5,
+    ) -> ValidationReport:
+        """Full validation with lockbox holdout.
+
+        Splits bars into research portion (1-lockbox_pct) and lockbox (lockbox_pct).
+        Runs the standard validation on the research portion first.
+        If that passes, runs a final OOS check on the lockbox portion.
+        If lockbox OOS performance degrades significantly, fails the validation.
+        """
+        n_total = len(bars)
+        lockbox_start = int(n_total * (1 - self._lockbox_pct))
+
+        research_bars = bars.iloc[:lockbox_start]
+        lockbox_bars = bars.iloc[lockbox_start:]
+
+        # Standard validation on research portion
+        report = await self.validate(spec, research_bars, n_eff, n_splits)
+
+        if not report.passed:
+            report.detail["lockbox"] = "skipped — failed standard validation"
+            return report
+
+        # Lockbox OOS check
+        bt = BacktesterImpl()
+        lockbox_result = await bt.run(spec, lockbox_bars)
+        lockbox_sharpe = self._sharpe_ratio(
+            np.diff([e["equity"] for e in lockbox_result.equity_curve])
+            / [e["equity"] for e in lockbox_result.equity_curve][:-1]
+            if len(lockbox_result.equity_curve) > 1
+            else np.array([])
+        )
+
+        # Lockbox must show non-negative Sharpe (not catastrophic degradation)
+        lockbox_passed = lockbox_sharpe >= 0
+
+        if not lockbox_passed:
+            report.passed = False
+            report.detail["lockbox"] = {
+                "passed": False,
+                "lockbox_sharpe": round(float(lockbox_sharpe), 4),
+                "reason": "Strategy shows negative Sharpe on held-out lockbox data",
+            }
+        else:
+            report.detail["lockbox"] = {
+                "passed": True,
+                "lockbox_sharpe": round(float(lockbox_sharpe), 4),
+            }
+
+        return report
 
     def _sharpe_ratio(self, returns: np.ndarray) -> float:
         if len(returns) < 2 or np.std(returns) == 0:

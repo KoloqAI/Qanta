@@ -85,3 +85,71 @@ class SchedulerImpl:
 
     async def list_jobs(self) -> list[dict]:
         return list(self._jobs.values())
+
+
+class EODFlattenJob:
+    """Flattens all intraday positions before market close.
+
+    Deterministic. No LLM. Checks market calendar, flattens via broker
+    when within the flatten window.
+    """
+
+    def __init__(
+        self,
+        broker: Any,
+        calendar: MarketCalendar,
+        flatten_minutes_before_close: int = 5,
+        audit_log: Any = None,
+    ) -> None:
+        self._broker = broker
+        self._calendar = calendar
+        self._flatten_minutes_before_close = flatten_minutes_before_close
+        self._audit_log = audit_log
+
+    async def check_and_flatten(self, current_time: datetime | None = None) -> dict:
+        """Check if we're in the flatten window and flatten if so.
+
+        Returns a dict with keys: flattened (bool), reason (str), close_time, current_time
+        """
+        now = current_time or datetime.now()
+        today = now.date()
+
+        # Check if today is a trading day
+        if not self._calendar.is_trading_day(today):
+            return {
+                "flattened": False,
+                "reason": f"{today} is not a trading day",
+                "close_time": None,
+                "current_time": now,
+            }
+
+        close_time = self._calendar.market_close_time(today)
+        flatten_start = close_time - timedelta(minutes=self._flatten_minutes_before_close)
+
+        # Check if current time is within the flatten window
+        if flatten_start <= now <= close_time:
+            await self._broker.flatten_all()
+            reason = (
+                f"Flattened all positions: within {self._flatten_minutes_before_close}min "
+                f"window before close at {close_time.strftime('%H:%M')}"
+            )
+            if self._audit_log is not None:
+                self._audit_log.append({
+                    "event": "eod_flatten",
+                    "time": now.isoformat(),
+                    "close_time": close_time.isoformat(),
+                    "reason": reason,
+                })
+            return {
+                "flattened": True,
+                "reason": reason,
+                "close_time": close_time,
+                "current_time": now,
+            }
+
+        return {
+            "flattened": False,
+            "reason": f"Outside flatten window (flatten starts at {flatten_start.strftime('%H:%M')})",
+            "close_time": close_time,
+            "current_time": now,
+        }

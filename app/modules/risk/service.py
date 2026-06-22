@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 
 @dataclass
@@ -31,16 +31,26 @@ class RiskGateImpl:
         max_position_pct: float = 10.0,
         daily_drawdown_kill_pct: float = 5.0,
         pdt_equity_minimum: float = 25_000.0,
+        halt_detector: Any = None,
     ) -> None:
         self._per_trade_stop_pct = per_trade_stop_pct
         self._max_position_pct = max_position_pct
         self._daily_drawdown_kill_pct = daily_drawdown_kill_pct
         self._pdt_equity_minimum = pdt_equity_minimum
+        self._halt_detector = halt_detector
         self._killed = False
 
     def check(self, order: dict, book: BookState) -> RiskDecision:
         if self._killed:
             return RiskDecision(allowed=False, reason="Kill switch active -- all trading halted")
+
+        # LULD / halt check
+        symbol = order.get("symbol", "")
+        if self._halt_detector and self._halt_detector.is_halted(symbol):
+            return RiskDecision(
+                allowed=False,
+                reason=f"Symbol {symbol} is halted: {self._halt_detector.halted_symbols().get(symbol, 'unknown')}"
+            )
 
         # Daily drawdown kill switch
         if book.equity > 0:

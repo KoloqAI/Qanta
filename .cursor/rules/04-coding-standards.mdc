@@ -8,7 +8,7 @@ alwaysApply: true
 - Python 3.12, type-hinted throughout; Pydantic v2 DTOs at every API boundary; SQLAlchemy 2 + Alembic
   migrations (never edit the DB schema without a migration).
 - FastAPI routers thin; logic in module `service.py`. Dependency-inject via `app/deps.py`.
-- Long-running work (research runs, backtests, evolution) goes to Celery workers, never the request path.
+- Long-running work (research runs, backtests, evolution) goes to Arq workers, never the request path.
 - Determinism: seed randomness in backtests/Monte Carlo; pin model + data versions in provenance so
   results are reproducible.
 - Tests are part of every milestone (see docs/06). Use pytest; include the harness verification suite and
