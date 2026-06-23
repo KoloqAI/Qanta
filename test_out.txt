@@ -1,0 +1,76 @@
+..........F.....FF...................................................... [ 47%]
+........................................................................ [ 94%]
+........                                                                 [100%]
+================================== FAILURES ===================================
+____________________________ test_me_authenticated ____________________________
+
+client = <httpx.AsyncClient object at 0x00000280E3836570>
+
+    @pytest.mark.asyncio
+    async def test_me_authenticated(client):
+        reg = await client.post(
+            "/auth/register",
+            json={"email": "admin@quanta.dev", "password": "StrongPass123!"},
+        )
+        cookies = reg.cookies
+        response = await client.get("/auth/me", cookies=cookies)
+>       assert response.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+tests\unit\test_auth_api.py:75: AssertionError
+____________________________ test_change_password _____________________________
+
+client = <httpx.AsyncClient object at 0x00000280E38EA6C0>
+
+    @pytest.mark.asyncio
+    async def test_change_password(client):
+        reg = await client.post(
+            "/auth/register",
+            json={"email": "admin@quanta.dev", "password": "StrongPass123!"},
+        )
+        cookies = reg.cookies
+        response = await client.post(
+            "/auth/change-password",
+            json={"old_password": "StrongPass123!", "new_password": "NewPass456!"},
+            cookies=cookies,
+        )
+>       assert response.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+tests\unit\test_auth_api.py:136: AssertionError
+_______________________ test_change_password_wrong_old ________________________
+
+client = <httpx.AsyncClient object at 0x00000280E39E98D0>
+
+    @pytest.mark.asyncio
+    async def test_change_password_wrong_old(client):
+        reg = await client.post(
+            "/auth/register",
+            json={"email": "admin@quanta.dev", "password": "StrongPass123!"},
+        )
+        cookies = reg.cookies
+        response = await client.post(
+            "/auth/change-password",
+            json={"old_password": "Wrong!", "new_password": "NewPass456!"},
+            cookies=cookies,
+        )
+>       assert response.status_code == 400
+E       assert 401 == 400
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+tests\unit\test_auth_api.py:157: AssertionError
+============================== warnings summary ===============================
+tests/unit/test_m8_gate.py::test_tier2_respects_budget
+tests/unit/test_m8_gate.py::test_nothing_self_deploys
+tests/unit/test_m8_gate.py::test_nothing_self_deploys
+  C:\Users\vipkaushik\OneDrive - Apollo Management L.P\Documents\Workspace\Qanta\.venv\Lib\site-packages\scipy\stats\_stats_py.py:10940: RuntimeWarning: invalid value encountered in scalar divide
+    slope = ssxym / ssxm
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/unit/test_auth_api.py::test_me_authenticated - assert 401 == 200
+FAILED tests/unit/test_auth_api.py::test_change_password - assert 401 == 200
+FAILED tests/unit/test_auth_api.py::test_change_password_wrong_old - assert 4...
+3 failed, 149 passed, 3 warnings in 17.90s

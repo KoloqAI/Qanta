@@ -78,29 +78,35 @@ async def scan_archetype(
 ) -> dict:
     """Run an archetype's scan block against the universe to surface candidates.
     Logged to search_ledger (read-only tool — no deployment)."""
+    from datetime import datetime as _dt
+    from app.modules.data.providers import scan_universe
+
     a = _archetypes.get(archetype_id)
     if not a:
         raise HTTPException(status_code=404, detail="Archetype not found")
 
-    scan_block = a.get("scan", {})
-    universe = body.universe
-    if not universe:
-        from app.modules.data.providers import SAMPLE_UNIVERSE
-        universe = SAMPLE_UNIVERSE
+    as_of = _dt.fromisoformat(body.as_of) if body.as_of else None
 
-    candidates = _run_scan(scan_block, universe, a)
+    result = await scan_universe(a, as_of=as_of)
 
-    # Log to search ledger
     await state.audit_log.log(
         actor="system",
         action="archetype_scan",
         subject_type="library_archetype",
         subject_id=archetype_id,
-        payload={"n_candidates": len(candidates), "as_of": body.as_of},
+        payload={
+            "n_candidates": len(result["candidates"]),
+            "as_of": body.as_of,
+            "is_sample_fallback": result["is_sample_fallback"],
+        },
         user_id=user.get("id"),
     )
 
-    return {"archetype_id": archetype_id, "candidates": candidates}
+    return {
+        "archetype_id": archetype_id,
+        "candidates": result["candidates"],
+        "is_sample_fallback": result["is_sample_fallback"],
+    }
 
 
 @router.post("/{archetype_id}/explore")
@@ -137,32 +143,3 @@ async def explore_archetype(
     return {"job_id": job_id, "archetype_id": archetype_id, "status": "queued"}
 
 
-def _run_scan(
-    scan_block: dict, universe: list[str], archetype: dict
-) -> list[dict]:
-    """Evaluate a scan block against the universe.
-    Returns ranked candidates with a fit score."""
-    candidates = []
-    for symbol in universe:
-        score = _evaluate_scan_conditions(scan_block, symbol)
-        if score > 0:
-            candidates.append({
-                "ticker": symbol,
-                "fit_score": round(score, 4),
-                "archetype": archetype.get("name", ""),
-                "family": archetype.get("family", ""),
-            })
-    candidates.sort(key=lambda c: c["fit_score"], reverse=True)
-    return candidates
-
-
-def _evaluate_scan_conditions(scan_block: dict, symbol: str) -> float:
-    """Placeholder scan evaluator. Returns a deterministic score per symbol
-    based on the scan conditions. Full DSL evaluation in a later batch."""
-    import hashlib
-    h = int(hashlib.md5(symbol.encode()).hexdigest()[:8], 16)
-    score = (h % 100) / 100.0
-    conditions = scan_block.get("all_of", [])
-    if conditions:
-        score *= min(1.0, len(conditions) / 3.0)
-    return score if score > 0.3 else 0.0

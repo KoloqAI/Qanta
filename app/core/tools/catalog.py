@@ -7,15 +7,34 @@ from app.core.tools.base import Tool, Permission, ToolContext, ToolResult
 
 class UniverseScanTool(Tool):
     name = "universe_scan"
-    description = "Scan universe for candidate tickers matching criteria"
+    description = "Scan universe for candidate tickers matching an archetype's scan block"
     permission = Permission.READ
 
     async def invoke(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-        from app.modules.data.providers import create_data_provider
+        from datetime import datetime
+        from app.api.library import _archetypes
+        from app.modules.data.providers import scan_universe
 
-        provider = create_data_provider()
-        universe = await provider.universe()
-        return ToolResult(success=True, data={"candidates": universe})
+        archetype_id = args.get("archetype_id")
+        as_of_str = args.get("as_of")
+        as_of = datetime.fromisoformat(as_of_str) if as_of_str else None
+
+        if archetype_id:
+            archetype = _archetypes.get(archetype_id)
+            if not archetype:
+                return ToolResult(
+                    success=False,
+                    error=f"Archetype '{archetype_id}' not found",
+                )
+        else:
+            archetype = {"scan": {}, "default_universe": {}, "name": "", "family": ""}
+
+        try:
+            result = await scan_universe(archetype, as_of=as_of)
+        except Exception as exc:
+            return ToolResult(success=False, error=str(exc))
+
+        return ToolResult(success=True, data=result)
 
 
 class TechnicalAnalysisTool(Tool):
@@ -86,34 +105,55 @@ class AuthorStrategyTool(Tool):
     permission = Permission.READ
 
     async def invoke(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+        from app.core.dsl.parser import parse_spec
+        from app.modules.research.service import (
+            StrategyAuthorImpl,
+            StubLLMProvider,
+            create_llm_provider,
+        )
+
         thesis = args.get("thesis", "")
         ticker = args.get("ticker", "AAPL")
+        if not thesis:
+            return ToolResult(
+                success=False, error="thesis is required"
+            )
 
-        spec = {
-            "id": "",
-            "version": 1,
-            "tickers": [ticker],
-            "thesis": thesis,
-            "regime": {"all_of": [{"gt": ["sma(50)", "sma(200)"]}]},
-            "entry": {
-                "when": {"crosses_above": ["sma(20)", "sma(50)"]},
-                "action": "enter_long",
-                "sizing": {"fixed_pct": 5.0},
+        llm = create_llm_provider()
+        is_fallback = isinstance(llm, StubLLMProvider)
+        author = StrategyAuthorImpl(llm=llm)
+
+        try:
+            spec_raw = await author.author(thesis, {"ticker": ticker})
+        except Exception as exc:
+            return ToolResult(
+                success=False,
+                error=f"Strategy authoring failed: {exc}",
+            )
+
+        # DSL type-check gate — reject malformed / unsafe specs
+        parse_result = parse_spec(spec_raw)
+        if not parse_result.success:
+            return ToolResult(
+                success=False,
+                data={
+                    "spec": spec_raw,
+                    "is_fallback_template": is_fallback,
+                    "parse_errors": [
+                        f"{e.field}: {e.message}"
+                        for e in (parse_result.errors or [])
+                    ],
+                },
+                error="Authored spec failed DSL validation",
+            )
+
+        return ToolResult(
+            success=True,
+            data={
+                "spec": spec_raw,
+                "is_fallback_template": is_fallback,
             },
-            "exits": [
-                {"stop_loss": {"pct": 3.0}},
-                {"take_profit": {"pct": 6.0}},
-                {"time_stop": {"sessions": 10}},
-            ],
-            "risk": {
-                "max_position_pct": 5.0,
-                "per_trade_stop_pct": 3.0,
-                "max_gross_exposure": 40.0,
-            },
-            "universe": {"primary": ticker},
-            "validation": {"targets": [{"R": 0.02, "H": 7}]},
-        }
-        return ToolResult(success=True, data={"spec": spec})
+        )
 
 
 class BacktestTool(Tool):
@@ -160,9 +200,11 @@ class ValidateTool(Tool):
     permission = Permission.READ
 
     async def invoke(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+        from datetime import datetime, timedelta
         from app.core.dsl.parser import parse_spec
         from app.modules.validation.service import ValidationHarnessImpl
-        from app.modules.data.providers import create_data_provider, recent_window
+        from app.modules.data.providers import create_data_provider, recent_window, SAMPLE_UNIVERSE
+        from app.modules.data.peers import select_correlation_peers
 
         spec_raw = args.get("spec", {})
         parse_result = parse_spec(spec_raw)
@@ -173,19 +215,135 @@ class ValidateTool(Tool):
             )
 
         provider = create_data_provider()
-        ticker = parse_result.spec.tickers[0] if parse_result.spec.tickers else "AAPL"
+        spec = parse_result.spec
+        ticker = spec.tickers[0] if spec.tickers else "AAPL"
         start, end = recent_window(700)
         bars = await provider.bars(ticker, start, end)
+        as_of = end
+
+        candidates = await provider.filtered_universe(
+            as_of=as_of, min_price=5, min_dollar_volume=5_000_000, cap=200,
+        )
+        if not candidates:
+            candidates = list(SAMPLE_UNIVERSE)
+
+        selection = await select_correlation_peers(
+            primary=ticker,
+            candidates=candidates,
+            provider=provider,
+            as_of=as_of,
+        )
 
         harness = ValidationHarnessImpl()
-        report = await harness.validate(parse_result.spec, bars, n_eff=args.get("n_eff", 1))
+        report = await harness.validate(
+            spec, bars,
+            n_eff=args.get("n_eff", 1),
+            peer_tickers=selection.peers if selection.sufficient else None,
+            provider=provider,
+            as_of=as_of,
+        )
         return ToolResult(
             success=True,
             data={
                 "passed": report.passed,
                 "deflated_sharpe": report.deflated_sharpe,
                 "pbo": report.pbo,
+                "peer_hit": report.peer_hit,
+                "gates_version": report.gates_version,
                 "confidence_curve": report.confidence_curve,
+                "detail": report.detail,
+            },
+        )
+
+
+class PeerTestTool(Tool):
+    name = "peer_test"
+    description = "Test a strategy spec against correlation-based peers to measure generalization"
+    permission = Permission.READ
+
+    async def invoke(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+        from datetime import datetime, timedelta
+        from app.core.dsl.parser import parse_spec
+        from app.modules.data.providers import create_data_provider, SAMPLE_UNIVERSE
+        from app.modules.data.peers import select_correlation_peers, peer_backtest
+
+        spec_raw = args.get("spec", {})
+        parse_result = parse_spec(spec_raw)
+        if not parse_result.success:
+            return ToolResult(
+                success=False,
+                data={"errors": [e.message for e in (parse_result.errors or [])]},
+            )
+
+        spec = parse_result.spec
+        primary = spec.tickers[0] if spec.tickers else None
+        if not primary:
+            return ToolResult(success=False, error="Spec must have at least one ticker")
+
+        as_of_str = args.get("as_of")
+        as_of = (
+            datetime.fromisoformat(as_of_str) if as_of_str
+            else datetime.now() - timedelta(days=1)
+        )
+
+        provider = create_data_provider()
+
+        explicit_peers = args.get("peers")
+        if explicit_peers and isinstance(explicit_peers, list) and len(explicit_peers) >= 5:
+            peers = explicit_peers
+            peer_selection_info = {
+                "method": "explicit",
+                "n_peers": len(peers),
+            }
+        else:
+            candidates = await provider.filtered_universe(
+                as_of=as_of, min_price=5, min_dollar_volume=5_000_000, cap=200,
+            )
+            if not candidates:
+                candidates = list(SAMPLE_UNIVERSE)
+
+            selection = await select_correlation_peers(
+                primary=primary,
+                candidates=candidates,
+                provider=provider,
+                as_of=as_of,
+            )
+            if not selection.sufficient:
+                return ToolResult(
+                    success=False,
+                    error=f"Insufficient peer data: {selection.reason}",
+                    data={
+                        "primary": primary,
+                        "peers_found": len(selection.peers),
+                        "sufficient": False,
+                        "reason": selection.reason,
+                    },
+                )
+            peers = selection.peers
+            peer_selection_info = {
+                "method": "correlation",
+                "n_candidates": len(candidates),
+                "n_peers": len(peers),
+                "reason": selection.reason,
+            }
+
+        result = await peer_backtest(
+            spec=spec,
+            peer_tickers=peers,
+            provider=provider,
+            as_of=as_of,
+        )
+
+        return ToolResult(
+            success=True,
+            data={
+                "primary": primary,
+                "peer_hit": result["peer_hit"],
+                "n_peers_tested": result["n_peers_tested"],
+                "n_peers_with_edge": result["n_peers_with_edge"],
+                "sufficient": result["sufficient"],
+                "peer_selection": peer_selection_info,
+                "details": result["details"],
             },
         )
 
@@ -310,6 +468,7 @@ def register_all_tools(registry) -> None:
         AuthorStrategyTool(),
         BacktestTool(),
         ValidateTool(),
+        PeerTestTool(),
         QueryBookTool(),
         PauseDeploymentTool(),
         FlattenDeploymentTool(),

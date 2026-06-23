@@ -96,14 +96,14 @@ Scope every user-owned row by `user_id` (single-user now, multi-user-ready).
 ## Tool catalog (registered tools; `permission` governs who/what may invoke)
 | Tool | Permission | In → Out |
 |------|------------|----------|
-| `universe_scan` | read | filter spec → candidate tickers |
+| `universe_scan` | read | {archetype_id?, as_of?} → {candidates: [{ticker, fit_score, archetype, family}], is_sample_fallback: bool}. Builds universe via Polygon grouped-daily → liquidity filter (median dollar-vol, trailing window) → DSL scan evaluation → ranked results. Sample fallback when no real provider configured. |
 | `technical_analysis` | read | ticker, indicators → analysis (uses DSL features) |
 | `characterize_ticker` | read | ticker → regime/behavior profile + stats |
 | `news_search` | read | ticker/window → news items (only if news module enabled) |
 | `author_strategy` | read | thesis + intent → DSL spec |
 | `backtest` | read | spec, window → BacktestResult |
-| `validate` | read | spec → ValidationReport (gauntlet; logs to ledger) |
-| `peer_test` | read | spec, peers → peer-hit distribution |
+| `validate` | read | spec, n_eff? → ValidationReport (gauntlet incl. peer-hit gate; logs to ledger). gates_version tracks gate-set evolution; stale reports blocked from approval/deployment. |
+| `peer_test` | read | {spec, peers?, as_of?} → {peer_hit, n_peers_tested, n_peers_with_edge, sufficient, details}. Backtests spec on correlation-based peers (point-in-time). Peers auto-selected via return correlation if not explicit. Fails closed when peer data is insufficient. Peer backtests count toward the single validation (search-budget ledger). |
 | `query_book` | read | — → portfolio/positions/exposure |
 | `query_performance` | read | filter → history, realized-vs-expected, calibration |
 | `pause_deployment` `flatten_deployment` `halt_deployment` | risk_reducing | deployment_id → ack (assistant may execute; fail-safe) |

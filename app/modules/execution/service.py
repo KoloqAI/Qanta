@@ -260,10 +260,18 @@ class ExecutionRuntimeImpl:
             if strategy.get("status") == "approved":
                 return  # Approved strategy passes the gate
 
-        # Check validation_store for a passing report
+        # Check validation_store for a passing report with current gates
         if self._validation_store is not None:
+            from app.modules.validation.service import GATES_VERSION
+
             report = self._validation_store.get(strategy_id)
             if report is not None and report.get("passed"):
+                if report.get("gates_version", 0) < GATES_VERSION:
+                    raise DeploymentGateError(
+                        f"Live deployment refused for strategy '{strategy_id}': "
+                        f"validation report predates gates_version {GATES_VERSION} "
+                        "(peer_hit gate added). Re-validate first."
+                    )
                 return  # Passing validation report passes the gate
 
         # Neither approval nor passing validation found

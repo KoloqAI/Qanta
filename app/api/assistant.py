@@ -37,6 +37,8 @@ _READ_KEYWORDS = {
     "profile": ("characterize_ticker", {}),
     "author": ("author_strategy", {}),
     "compose": ("author_strategy", {}),
+    "peer": ("peer_test", {}),
+    "peer_test": ("peer_test", {}),
 }
 
 _RISK_REDUCING_KEYWORDS = {
@@ -77,6 +79,17 @@ def _extract_deployment_id(text: str) -> str | None:
     return None
 
 
+def _extract_archetype_id(text: str) -> str | None:
+    """Try to extract a known archetype id (snake_case slug) from the message."""
+    from app.api.library import _archetypes
+
+    lower = text.lower()
+    for aid in _archetypes:
+        if aid in lower:
+            return aid
+    return None
+
+
 def _detect_intent(text: str) -> tuple[str | None, str, dict]:
     """Return (tool_name, permission_category, extra_args) from message text."""
     lower = text.lower()
@@ -109,6 +122,10 @@ def _detect_intent(text: str) -> tuple[str | None, str, dict]:
             ticker = _extract_ticker(text)
             if ticker:
                 args["ticker"] = ticker
+            if tool_name == "universe_scan":
+                archetype_id = _extract_archetype_id(text)
+                if archetype_id:
+                    args["archetype_id"] = archetype_id
             return tool_name, "read", args
 
     return None, "unknown", {}
@@ -239,9 +256,16 @@ def _format_tool_result(tool_name: str, data: dict | None) -> str:
 
     if tool_name == "universe_scan":
         candidates = data.get("candidates", [])
-        lines = [f"Found {len(candidates)} tickers in the scan universe:\n"]
-        for i, t in enumerate(candidates):
-            lines.append(f"  {i+1}. {t}")
+        is_sample = data.get("is_sample_fallback", False)
+        sample_note = " [SAMPLE DATA — no real provider configured]" if is_sample else ""
+        lines = [f"Found {len(candidates)} candidate(s){sample_note}:\n"]
+        for i, c in enumerate(candidates):
+            if isinstance(c, dict):
+                lines.append(
+                    f"  {i+1}. {c['ticker']}  (fit: {c['fit_score']:.4f})"
+                )
+            else:
+                lines.append(f"  {i+1}. {c}")
         lines.append(
             "\nAsk me to analyze or compose a strategy for any of these tickers."
         )
@@ -269,8 +293,21 @@ def _format_tool_result(tool_name: str, data: dict | None) -> str:
         spec = data.get("spec", {})
         thesis = spec.get("thesis", "")
         ticker = (spec.get("tickers") or ["?"])[0]
+        is_fallback = data.get("is_fallback_template", False)
+        fallback_note = (
+            "\n[TEMPLATE FALLBACK — no LLM configured; spec is a generic "
+            "template, not authored from the thesis]\n"
+            if is_fallback
+            else ""
+        )
+        parse_errors = data.get("parse_errors")
+        if parse_errors:
+            return (
+                f"Authored spec for {ticker} FAILED DSL validation:\n"
+                + "\n".join(f"  - {e}" for e in parse_errors)
+            )
         return (
-            f"Composed a strategy spec for {ticker}:\n\n"
+            f"Composed a strategy spec for {ticker}:{fallback_note}\n"
             f"Thesis: {thesis}\n"
             f"Entry: {spec.get('entry', {}).get('when', {})}\n"
             f"Exits: {len(spec.get('exits', []))} exit rules\n"
@@ -293,7 +330,20 @@ def _format_tool_result(tool_name: str, data: dict | None) -> str:
         return (
             f"Validation {'PASSED' if passed else 'FAILED'}:\n\n"
             f"  DSR: {data.get('deflated_sharpe', 0):.3f}\n"
-            f"  PBO: {data.get('pbo', 0):.3f}"
+            f"  PBO: {data.get('pbo', 0):.3f}\n"
+            f"  Peer hit: {data.get('peer_hit', 0):.1%}"
+        )
+
+    if tool_name == "peer_test":
+        hit = data.get("peer_hit", 0)
+        tested = data.get("n_peers_tested", 0)
+        with_edge = data.get("n_peers_with_edge", 0)
+        sufficient = data.get("sufficient", False)
+        if not sufficient:
+            return f"Peer test FAILED: insufficient peer data ({tested} peers tested)"
+        return (
+            f"Peer test: {hit:.0%} hit rate ({with_edge}/{tested} peers show edge)\n"
+            f"Primary: {data.get('primary', '?')}"
         )
 
     if tool_name == "query_book":

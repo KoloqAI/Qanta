@@ -65,6 +65,16 @@ across the universe at `as_of` and returns ranked candidate tickers (rank = fit 
 scan conditions hold + liquidity). Candidates feed the agent (author thesis + concrete spec) → backtest →
 gauntlet → ledger. No scan = no idea what to look for; the playbook IS the day-one knowledge.
 
+**Scan pipeline** (Polygon path): grouped-daily for the `as_of` date + trailing liquidity window →
+filter by `default_universe` (min_price, median dollar-volume over ~20 sessions) → cap at
+`scan_universe_cap` (default 500) → fetch bars for survivors → evaluate `scan` DSL conditions
+point-in-time (no lookahead — `as_of` clamps bar end dates) → rank by fit score → return.
+When no real provider is configured, returns the sample universe with `is_sample_fallback: true`.
+
+**Return shape**: `{candidates: [{ticker, fit_score, archetype, family}], is_sample_fallback: bool}`.
+Config params: `scan_universe_cap`, `polygon_calls_per_minute`, `scan_bar_lookback_days`,
+`scan_liquidity_window` (all in Settings / env).
+
 ### Aggressive exploration workflow (seeded T2; deterministic pipeline, ledger-governed)
 ```
 for archetype in library (budget-ordered):

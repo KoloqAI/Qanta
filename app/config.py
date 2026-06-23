@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     polygon_base_url: str = "https://api.polygon.io"
     databento_api_key: str = ""
 
+    # Scan configuration
+    scan_universe_cap: int = 500
+    polygon_calls_per_minute: int = 5
+    scan_bar_lookback_days: int = 100
+    scan_liquidity_window: int = 20
+
     # Broker (execution scope only)
     ibkr_host: str = "127.0.0.1"
     ibkr_port: int = 4002

@@ -255,7 +255,10 @@ class StrategyAuthorImpl:
         }
 
     async def _llm_author(self, thesis: str, intent: dict) -> dict:
-        """Use the LLM to compose a full strategy spec from a thesis."""
+        """Use the LLM to compose a full strategy spec from a thesis.
+
+        Raises on LLM/parse failure — callers decide fallback policy.
+        """
         assert self._llm is not None
         ticker = intent.get("ticker", "AAPL")
         messages = [
@@ -281,45 +284,16 @@ class StrategyAuthorImpl:
                 ),
             },
         ]
-        try:
-            response = await self._llm.complete(messages, tier="mid")
-            content = response.get("content", "")
-            spec = json.loads(content)
-            if isinstance(spec, dict):
-                # Ensure required fields are present
-                spec.setdefault("id", "")
-                spec.setdefault("version", 1)
-                spec.setdefault("tickers", [ticker])
-                spec.setdefault("thesis", thesis)
-                return spec
-        except Exception:
-            logger.warning("LLM authoring failed — falling back to template spec")
-        # Fallback to deterministic template
-        ticker = intent.get("ticker", "AAPL")
-        return {
-            "id": "",
-            "version": 1,
-            "tickers": [ticker],
-            "thesis": thesis,
-            "regime": {"all_of": [{"gt": ["sma(50)", "sma(200)"]}]},
-            "entry": {
-                "when": {"crosses_above": ["sma(20)", "sma(50)"]},
-                "action": "enter_long",
-                "sizing": {"fixed_pct": 5.0},
-            },
-            "exits": [
-                {"stop_loss": {"pct": 3.0}},
-                {"take_profit": {"pct": 6.0}},
-                {"time_stop": {"sessions": 10}},
-            ],
-            "risk": {
-                "max_position_pct": 5.0,
-                "per_trade_stop_pct": 3.0,
-                "max_gross_exposure": 40.0,
-            },
-            "universe": {"primary": ticker},
-            "validation": {"targets": [{"R": 0.02, "H": 7}]},
-        }
+        response = await self._llm.complete(messages, tier="mid")
+        content = response.get("content", "")
+        spec = json.loads(content)
+        if not isinstance(spec, dict):
+            raise ValueError("LLM returned non-dict response")
+        spec.setdefault("id", "")
+        spec.setdefault("version", 1)
+        spec.setdefault("tickers", [ticker])
+        spec.setdefault("thesis", thesis)
+        return spec
 
     async def red_team(self, spec: dict) -> list[str]:
         # When an LLM is available, use it for deeper critique

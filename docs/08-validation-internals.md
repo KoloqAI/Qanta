@@ -78,8 +78,14 @@ def confidence(spec, target_R, horizon_H, oos_windows, n_eff, base_rate_p0):
     return {C: post.mean(), C_lo: post.ppf(0.10), C_hi: post.ppf(0.90)}   # act on C_lo
 ```
 - Outcome = strategy net return over H with the stop active (first-passage aware).
-- Emission gates: only return a number if DSR ≥ 0.95, PBO ≤ 0.20, peer-hit ≥ threshold, and C_lo ≥ floor.
-  Otherwise emit "Not validated: {gate}".
+- Emission gates: only return a number if DSR ≥ 0.95, PBO ≤ 0.20, peer-hit ≥ 0.60 (config: `peer_hit_rate_min`),
+  and C_lo ≥ floor. Otherwise emit "Not validated: {gate}".
+- Peer-hit gate: spec is backtested on the N most return-correlated tickers (point-in-time, `as_of` clamped).
+  peer_hit = fraction of peers with net_edge > 0. Peers auto-selected via correlation (per archetype `peers_hint`);
+  if insufficient peer data (< `min_peers`), gate fails closed. Peer backtests are part of the single validation
+  (counted in the search-budget ledger, not a separate multiple-testing backdoor).
+  `gates_version` (currently 2) tracks gate-set evolution; reports predating it are stale and blocked from
+  approval/deployment until re-validated.
 - Headline: *Conditional on {regime}, deflated {C}% (90% {C_lo}–{C_hi}) of ≥{R} over {H}, max loss {L};
   regime held {G}% of {window}; peers {f}/{n}. (DSR {d}, PBO {p}.)* Optionally a confidence-vs-target curve.
 - Never authored by the LLM. Calibration logged vs realized; recalibrate OOS only.

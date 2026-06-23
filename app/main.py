@@ -37,6 +37,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     archetypes = load_archetypes(validate=True)
     register_archetypes(archetypes)
 
+    from app.modules.validation.service import invalidate_stale_reports
+    from app import state
+    invalidate_stale_reports(state.validation_reports)
+
     yield
 
 

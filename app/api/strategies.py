@@ -116,6 +116,8 @@ async def validate_strategy(strategy_id: str, db: DB, user: CurrentUser) -> dict
         "passed": result.get("passed", False),
         "dsr": result.get("dsr", 0),
         "pbo": result.get("pbo", 0),
+        "peer_hit": result.get("peer_hit", 0),
+        "gates_version": result.get("gates_version", 0),
         "sharpe": bt_result.get("sharpe", 0),
         "net_edge": bt_result.get("net_edge", 0),
         "n_trades": bt_result.get("n_trades", 0),
@@ -159,11 +161,22 @@ async def approve_strategy(
     version = spec.get("version", 1)
 
     if body.approved:
+        from app.modules.validation.service import GATES_VERSION
+
         report = state.validation_reports.get(strategy_id, {})
         if not report.get("passed"):
             raise HTTPException(
                 status_code=400,
                 detail="Strategy must pass validation before approval. Run /validate first.",
+            )
+        if report.get("gates_version", 0) < GATES_VERSION:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Validation report is stale (gates_version "
+                    f"{report.get('gates_version', 0)} < {GATES_VERSION}). "
+                    "Re-validate with the current gate set."
+                ),
             )
 
         await state.registry.update_state(strategy_id, version, "approved")

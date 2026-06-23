@@ -1,15 +1,30 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from itertools import combinations
+from pathlib import Path
 from typing import Any, Protocol
 
 import numpy as np
+import yaml
 from scipy import stats as scipy_stats
 
 from app.core.dsl.schema import StrategySpec
 from app.modules.backtest.service import BacktesterImpl, CostModel
 import pandas as pd
+
+logger = logging.getLogger(__name__)
+
+GATES_VERSION = 2
+
+
+def _load_validation_config() -> dict[str, Any]:
+    path = Path(__file__).parents[3] / "config" / "validation.yaml"
+    if path.exists():
+        with open(path) as f:
+            return yaml.safe_load(f) or {}
+    return {}
 
 
 @dataclass
@@ -21,6 +36,7 @@ class ValidationReport:
     n_eff: int
     passed: bool
     confidence_curve: list[dict[str, Any]]
+    gates_version: int = GATES_VERSION
     detail: dict[str, Any] = field(default_factory=dict)
 
 
@@ -38,6 +54,7 @@ class ValidationHarnessImpl:
         min_trades: int = 100,
         cost_edge_ratio: float = 0.50,
         lockbox_pct: float = 0.15,
+        peer_hit_threshold: float | None = None,
     ) -> None:
         self._dsr_threshold = dsr_threshold
         self._pbo_threshold = pbo_threshold
@@ -45,12 +62,22 @@ class ValidationHarnessImpl:
         self._cost_edge_ratio = cost_edge_ratio
         self._lockbox_pct = lockbox_pct
 
+        if peer_hit_threshold is not None:
+            self._peer_hit_threshold = peer_hit_threshold
+        else:
+            config = _load_validation_config()
+            thresholds = config.get("thresholds", {})
+            self._peer_hit_threshold = thresholds.get("peer_hit_rate_min", 0.60)
+
     async def validate(
         self,
         spec: StrategySpec,
         bars: pd.DataFrame,
         n_eff: int = 1,
         n_splits: int = 5,
+        peer_tickers: list[str] | None = None,
+        provider=None,
+        as_of=None,
     ) -> ValidationReport:
         bt = BacktesterImpl()
         result = await bt.run(spec, bars)
@@ -82,8 +109,12 @@ class ValidationHarnessImpl:
         # Confidence
         confidence_curve = self._compute_confidence(result, spec, n_eff)
 
-        # Peer hit (stub -- requires peer data)
-        peer_hit = 0.0
+        # Peer hit — backtest on correlated peers
+        peer_hit_result = await self._compute_peer_hit(
+            spec, peer_tickers, provider, as_of,
+        )
+        peer_hit = peer_hit_result["peer_hit"]
+        peer_sufficient = peer_hit_result["sufficient"]
 
         # Gate checks
         gates = {
@@ -96,6 +127,11 @@ class ValidationHarnessImpl:
                 if result.frictionless_edge > 0
                 else True
             ),
+            "peer_hit": (
+                peer_hit >= self._peer_hit_threshold
+                if peer_sufficient
+                else False
+            ),
         }
         passed = all(gates.values())
 
@@ -107,6 +143,7 @@ class ValidationHarnessImpl:
             n_eff=n_eff,
             passed=passed,
             confidence_curve=confidence_curve,
+            gates_version=GATES_VERSION,
             detail={
                 "gates": gates,
                 "sharpe": round(float(sr_hat), 4),
@@ -115,6 +152,7 @@ class ValidationHarnessImpl:
                 "n_trades": result.n_trades,
                 "net_edge": result.net_edge,
                 "frictionless_edge": result.frictionless_edge,
+                "peer_hit_detail": peer_hit_result,
             },
         )
 
@@ -172,6 +210,41 @@ class ValidationHarnessImpl:
             }
 
         return report
+
+    async def _compute_peer_hit(
+        self,
+        spec: StrategySpec,
+        peer_tickers: list[str] | None,
+        provider,
+        as_of,
+    ) -> dict:
+        """Backtest spec on peers and return hit-rate dict.
+
+        If peer_tickers or provider are None, fails closed with
+        peer_hit=0.0 and sufficient=False.
+        """
+        if not peer_tickers or provider is None:
+            return {
+                "peer_hit": 0.0,
+                "n_peers_tested": 0,
+                "n_peers_with_edge": 0,
+                "sufficient": False,
+                "reason": "No peers or provider supplied",
+                "details": [],
+            }
+
+        from datetime import datetime, timedelta
+        from app.modules.data.peers import peer_backtest
+
+        if as_of is None:
+            as_of = datetime.now() - timedelta(days=1)
+
+        return await peer_backtest(
+            spec=spec,
+            peer_tickers=peer_tickers,
+            provider=provider,
+            as_of=as_of,
+        )
 
     def _sharpe_ratio(self, returns: np.ndarray) -> float:
         if len(returns) < 2 or np.std(returns) == 0:
@@ -314,3 +387,23 @@ class ValidationHarnessImpl:
             )
 
         return curve
+
+
+def invalidate_stale_reports(reports: dict[str, dict]) -> int:
+    """Mark in-memory validation reports that predate the peer-hit gate.
+
+    Reports with gates_version < GATES_VERSION get passed=False and a
+    stale_reason. Returns the count of invalidated reports.
+    """
+    count = 0
+    for sid, report in reports.items():
+        if report.get("gates_version", 0) < GATES_VERSION:
+            report["passed"] = False
+            report["stale_reason"] = (
+                f"Report predates gates_version {GATES_VERSION} "
+                "(peer_hit gate added); re-validate to clear."
+            )
+            count += 1
+    if count:
+        logger.info("Invalidated %d stale validation report(s)", count)
+    return count

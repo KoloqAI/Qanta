@@ -93,6 +93,87 @@ async def test_domain_scan_returns_candidates():
     assert all("ticker" in c for c in candidates)
 
 
+@pytest.fixture
+def _force_stub_llm(monkeypatch):
+    """Force StubLLMProvider so tests are deterministic without real LLM keys."""
+    from app.modules.research.service import StubLLMProvider
+    monkeypatch.setattr(
+        "app.modules.research.service.create_llm_provider",
+        lambda: StubLLMProvider(),
+    )
+
+
+async def test_author_tool_produces_ticker_specific_specs(
+    registry, _force_stub_llm,
+):
+    """author_strategy with different tickers produces specs that contain
+    the requested ticker, not a hardcoded default."""
+    tool = registry.get("author_strategy")
+    assert tool is not None
+    ctx = ToolContext(user_id="test", session_id="test")
+
+    r1 = await tool.invoke(
+        {"thesis": "Momentum breakout", "ticker": "TSLA"}, ctx,
+    )
+    assert r1.success, r1.error
+    assert r1.data["spec"]["tickers"] == ["TSLA"]
+
+    r2 = await tool.invoke(
+        {"thesis": "Mean reversion in oversold territory", "ticker": "JPM"}, ctx,
+    )
+    assert r2.success, r2.error
+    assert r2.data["spec"]["tickers"] == ["JPM"]
+
+
+async def test_author_tool_rejects_bad_spec():
+    """A spec missing stop_loss or with unknown primitives is rejected
+    at the DSL parse gate."""
+    from app.core.dsl.parser import parse_spec
+
+    bad_spec = {
+        "id": "",
+        "version": 1,
+        "tickers": ["AAPL"],
+        "thesis": "Test bad spec",
+        "regime": {"all_of": [{"gt": ["sma(50)", "sma(200)"]}]},
+        "entry": {
+            "when": {"crosses_above": ["sma(20)", "sma(50)"]},
+            "action": "enter_long",
+            "sizing": {"fixed_pct": 5.0},
+        },
+        "exits": [],  # No stop_loss — must be rejected
+        "risk": {
+            "max_position_pct": 5.0,
+            "per_trade_stop_pct": 3.0,
+            "max_gross_exposure": 40.0,
+        },
+    }
+    result = parse_spec(bad_spec)
+    assert not result.success
+    assert any("stop_loss" in e.message for e in result.errors)
+
+
+async def test_author_tool_flags_fallback_template(
+    registry, _force_stub_llm,
+):
+    """When no LLM is configured the tool returns is_fallback_template=True."""
+    tool = registry.get("author_strategy")
+    ctx = ToolContext(user_id="test", session_id="test")
+    result = await tool.invoke(
+        {"thesis": "RSI reversion in tech", "ticker": "AAPL"}, ctx,
+    )
+    assert result.success, result.error
+    assert result.data["is_fallback_template"] is True
+
+
+async def test_author_tool_requires_thesis(registry):
+    tool = registry.get("author_strategy")
+    ctx = ToolContext(user_id="test", session_id="test")
+    result = await tool.invoke({"ticker": "AAPL"}, ctx)
+    assert not result.success
+    assert "thesis" in (result.error or "").lower()
+
+
 async def test_backtest_tool_works(registry):
     tool = registry.get("backtest")
     assert tool is not None
@@ -120,3 +201,184 @@ async def test_backtest_tool_works(registry):
     result = await tool.invoke({"spec": spec}, ctx)
     assert result.success
     assert "n_trades" in result.data
+
+
+# ---------------------------------------------------------------------------
+# peer_test tool tests
+# ---------------------------------------------------------------------------
+
+_PEER_TEST_SPEC = {
+    "id": "peer-test-spec",
+    "version": 1,
+    "tickers": ["AAPL"],
+    "thesis": "SMA crossover for peer testing",
+    "regime": {"all_of": [{"gt": ["sma(50)", "sma(200)"]}]},
+    "entry": {
+        "when": {"crosses_above": ["sma(20)", "sma(50)"]},
+        "action": "enter_long",
+        "sizing": {"fixed_pct": 5.0},
+    },
+    "exits": [{"stop_loss": {"pct": 3.0}}],
+    "risk": {
+        "max_position_pct": 5.0,
+        "per_trade_stop_pct": 3.0,
+        "max_gross_exposure": 40.0,
+    },
+    "universe": {"primary": "AAPL"},
+    "validation": {"targets": [{"R": 0.02, "H": 7}]},
+}
+
+
+def test_peer_test_tool_registered(registry):
+    """peer_test is registered and is a READ tool."""
+    tool = registry.get("peer_test")
+    assert tool is not None
+    assert tool.permission == Permission.READ
+
+
+async def test_peer_test_generalizing_strategy(registry):
+    """A strategy that generalizes to correlated peers passes.
+
+    SampleDataProvider produces synthetic data with similar structure
+    for all tickers, so a broad SMA crossover should show edge on
+    at least some peers.
+    """
+    tool = registry.get("peer_test")
+    ctx = ToolContext(user_id="test", session_id="test")
+    result = await tool.invoke({"spec": _PEER_TEST_SPEC}, ctx)
+    assert result.success, result.error
+    assert result.data["n_peers_tested"] > 0
+    assert result.data["sufficient"]
+    assert "peer_hit" in result.data
+
+
+async def test_peer_test_insufficient_data_fails_closed():
+    """When no peers have sufficient data, the peer_backtest result
+    shows sufficient=False and peer_hit=0.0 (fail closed)."""
+    import pandas as pd
+    from app.modules.data.peers import peer_backtest
+    from app.modules.data.providers import SampleDataProvider
+
+    class EmptyProvider(SampleDataProvider):
+        async def bars(self, symbol, start, end, **kw):
+            if symbol != "AAPL":
+                return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+            return await super().bars(symbol, start, end, **kw)
+
+    from datetime import datetime, timedelta
+    as_of = datetime(2024, 6, 1)
+    provider = EmptyProvider()
+    spec = _make_parsed_spec("AAPL")
+
+    result = await peer_backtest(
+        spec=spec,
+        peer_tickers=[f"FAKE{i}" for i in range(10)],
+        provider=provider,
+        as_of=as_of,
+    )
+    assert not result["sufficient"]
+    assert result["peer_hit"] == 0.0
+    assert result["n_peers_tested"] == 0
+
+
+async def test_peer_test_primary_no_data_fails():
+    """When the primary ticker has insufficient data, peer selection fails."""
+    import pandas as pd
+    from app.modules.data.peers import select_correlation_peers
+    from app.modules.data.providers import SampleDataProvider, SAMPLE_UNIVERSE
+    from datetime import datetime
+
+    class ShortDataProvider(SampleDataProvider):
+        async def bars(self, symbol, start, end, **kw):
+            if symbol == "NODATA":
+                return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+            return await super().bars(symbol, start, end, **kw)
+
+    provider = ShortDataProvider()
+    result = await select_correlation_peers(
+        primary="NODATA",
+        candidates=list(SAMPLE_UNIVERSE),
+        provider=provider,
+        as_of=datetime(2024, 6, 1),
+    )
+    assert not result.sufficient
+    assert len(result.peers) == 0
+
+
+# ---------------------------------------------------------------------------
+# Harness peer_hit gate tests
+# ---------------------------------------------------------------------------
+
+
+async def test_harness_includes_peer_hit_gate():
+    """ValidationReport includes peer_hit in the gates dict."""
+    from app.modules.validation.service import ValidationHarnessImpl, GATES_VERSION
+    from app.modules.data.providers import SampleDataProvider
+    from datetime import datetime, timedelta
+
+    provider = SampleDataProvider()
+    as_of = datetime(2024, 6, 1)
+    start = as_of - timedelta(days=700)
+    bars = await provider.bars("AAPL", start, as_of)
+
+    harness = ValidationHarnessImpl()
+    report = await harness.validate(
+        _make_parsed_spec("AAPL"),
+        bars,
+        n_eff=1,
+        peer_tickers=["MSFT", "GOOGL", "AMZN", "META", "NVDA",
+                       "TSLA", "JPM", "V", "JNJ", "WMT"],
+        provider=provider,
+        as_of=as_of,
+    )
+    assert "peer_hit" in report.detail["gates"]
+    assert report.gates_version == GATES_VERSION
+    assert report.peer_hit >= 0
+
+
+async def test_harness_no_peers_fails_closed():
+    """When no peers are passed, peer_hit gate is False."""
+    from app.modules.validation.service import ValidationHarnessImpl
+    from app.modules.data.providers import SampleDataProvider
+    from datetime import datetime, timedelta
+
+    provider = SampleDataProvider()
+    as_of = datetime(2024, 6, 1)
+    bars = await provider.bars("AAPL", as_of - timedelta(days=700), as_of)
+
+    harness = ValidationHarnessImpl()
+    report = await harness.validate(
+        _make_parsed_spec("AAPL"),
+        bars,
+        n_eff=1,
+        peer_tickers=None,
+        provider=provider,
+        as_of=as_of,
+    )
+    assert report.detail["gates"]["peer_hit"] is False
+
+
+def test_stale_report_invalidation():
+    """Reports without current gates_version are marked stale."""
+    from app.modules.validation.service import invalidate_stale_reports, GATES_VERSION
+
+    reports = {
+        "old-strat": {"passed": True, "gates_version": 1},
+        "current-strat": {"passed": True, "gates_version": GATES_VERSION},
+        "ancient-strat": {"passed": True},
+    }
+    count = invalidate_stale_reports(reports)
+    assert count == 2
+    assert reports["old-strat"]["passed"] is False
+    assert "stale_reason" in reports["old-strat"]
+    assert reports["current-strat"]["passed"] is True
+    assert reports["ancient-strat"]["passed"] is False
+
+
+def _make_parsed_spec(ticker: str):
+    """Helper to produce a parsed StrategySpec for testing."""
+    from app.core.dsl.parser import parse_spec
+    raw = dict(_PEER_TEST_SPEC, tickers=[ticker])
+    result = parse_spec(raw)
+    assert result.success, [e.message for e in (result.errors or [])]
+    return result.spec

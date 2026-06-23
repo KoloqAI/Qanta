@@ -79,6 +79,7 @@ export function RegistryPage() {
   const [horizonFilter, setHorizonFilter] = useState('')
   const [selectedArchetype, setSelectedArchetype] = useState<string | null>(null)
   const [scanResults, setScanResults] = useState<ScanCandidate[] | null>(null)
+  const [isSampleFallback, setIsSampleFallback] = useState(false)
   const [exploreStatus, setExploreStatus] = useState<string | null>(null)
 
   /* ---- Queries ---- */
@@ -102,10 +103,11 @@ export function RegistryPage() {
 
   /* ---- Library Mutations ---- */
 
-  const scanMutation = useMutation<{ candidates: ScanCandidate[] }, Error, string>({
+  const scanMutation = useMutation<{ candidates: ScanCandidate[]; is_sample_fallback: boolean }, Error, string>({
     mutationFn: (archetypeId) => apiMutate(`/api/library/${archetypeId}/scan`, {}),
     onSuccess: (res) => {
       setScanResults(res.candidates)
+      setIsSampleFallback(res.is_sample_fallback ?? false)
       toast(`Scan found ${res.candidates.length} candidate(s)`, 'success')
     },
     onError: (e) => toast(e.message, 'error'),
@@ -126,6 +128,7 @@ export function RegistryPage() {
   const handleScan = () => {
     if (selectedArchetype) {
       setScanResults(null)
+      setIsSampleFallback(false)
       scanMutation.mutate(selectedArchetype)
     }
   }
@@ -463,9 +466,16 @@ export function RegistryPage() {
                   {/* Scan results */}
                   {scanResults && (
                     <div>
-                      <h3 className="text-xs text-muted mb-2">
-                        Scan Results ({scanResults.length} candidate{scanResults.length !== 1 ? 's' : ''})
-                      </h3>
+                      <div className="flex items-center gap-2 mb-2">
+                        <h3 className="text-xs text-muted">
+                          Scan Results ({scanResults.length} candidate{scanResults.length !== 1 ? 's' : ''})
+                        </h3>
+                        {isSampleFallback && (
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-amber/20 text-amber font-medium">
+                            Sample data
+                          </span>
+                        )}
+                      </div>
                       {scanResults.length === 0 ? (
                         <p className="text-sm text-faint">No candidates matched the scan criteria</p>
                       ) : (

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
+import time
 from datetime import datetime, date, timedelta
 from typing import Any
 
@@ -95,6 +97,15 @@ class SampleDataProvider:
                 symbols.append(sym)
         return sorted(symbols)
 
+    async def filtered_universe(
+        self,
+        as_of: datetime,
+        min_price: float = 5,
+        min_dollar_volume: float = 5_000_000,
+        cap: int = 500,
+    ) -> list[str]:
+        return await self.universe(as_of=as_of)
+
 
 # Polygon aggregate timespans keyed by the suffix of our timeframe strings.
 _POLYGON_TIMESPAN = {
@@ -120,6 +131,30 @@ def _parse_timeframe(timeframe: str) -> tuple[int, str]:
     return max(multiplier, 1), timespan
 
 
+class _PolygonRateLimiter:
+    """Simple async rate limiter (token-bucket per minute)."""
+
+    def __init__(self, calls_per_minute: int = 5) -> None:
+        self._interval = 60.0 / max(calls_per_minute, 1)
+        self._lock = asyncio.Lock()
+        self._last_call = 0.0
+
+    async def acquire(self) -> None:
+        async with self._lock:
+            now = time.monotonic()
+            wait = self._interval - (now - self._last_call)
+            if wait > 0:
+                await asyncio.sleep(wait)
+            self._last_call = time.monotonic()
+
+
+def _trading_dates(end_date: date, window: int) -> list[date]:
+    """Return the last *window* business days up to and including *end_date*."""
+    start = end_date - timedelta(days=int(window * 1.6) + 10)
+    dates = pd.bdate_range(start=start, end=end_date)
+    return [d.date() for d in dates[-window:]]
+
+
 class PolygonDataProvider:
     """Market data backed by the Polygon.io REST API.
 
@@ -143,6 +178,15 @@ class PolygonDataProvider:
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
 
+        from app.config import settings
+        self._rate_limiter = _PolygonRateLimiter(settings.polygon_calls_per_minute)
+        self._grouped_cache: dict[str, list[dict]] = {}
+        self._bars_cache: dict[str, pd.DataFrame] = {}
+
+    # ------------------------------------------------------------------
+    # Bars (per-ticker OHLCV)
+    # ------------------------------------------------------------------
+
     async def bars(
         self,
         symbol: str,
@@ -157,6 +201,12 @@ class PolygonDataProvider:
         if start > end:
             return _empty_bars()
 
+        cache_key = (
+            f"{symbol}:{start.date().isoformat()}:{end.date().isoformat()}:{timeframe}"
+        )
+        if cache_key in self._bars_cache:
+            return self._bars_cache[cache_key]
+
         multiplier, timespan = _parse_timeframe(timeframe)
         path = (
             f"/v2/aggs/ticker/{symbol.upper()}/range/{multiplier}/{timespan}"
@@ -168,6 +218,8 @@ class PolygonDataProvider:
             "limit": 50000,
             "apiKey": self._api_key,
         }
+
+        await self._rate_limiter.acquire()
 
         import httpx
 
@@ -201,14 +253,113 @@ class PolygonDataProvider:
         df[["open", "high", "low", "close"]] = df[["open", "high", "low", "close"]].astype(float)
         df["volume"] = df["volume"].astype(float)
         df.index.name = "date"
+
+        self._bars_cache[cache_key] = df
         return df
+
+    # ------------------------------------------------------------------
+    # Grouped daily (all US equities for one date)
+    # ------------------------------------------------------------------
+
+    async def grouped_daily(self, target_date: date) -> list[dict]:
+        """Fetch one day's OHLCV for every US equity via Polygon grouped daily.
+
+        Returns a list of dicts with keys ``T`` (ticker), ``o``, ``h``, ``l``,
+        ``c``, ``v``.  Results are cached in-memory by date.
+        """
+        key = target_date.isoformat()
+        if key in self._grouped_cache:
+            return self._grouped_cache[key]
+
+        await self._rate_limiter.acquire()
+
+        path = f"/v2/aggs/grouped/locale/us/market/stocks/{key}"
+        params = {"adjusted": "true", "apiKey": self._api_key}
+
+        import httpx
+
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            resp = await client.get(f"{self._base_url}{path}", params=params)
+
+        if resp.status_code == 401:
+            raise RuntimeError("Polygon authentication failed — check POLYGON_API_KEY")
+        if resp.status_code == 429:
+            raise RuntimeError("Polygon rate limit exceeded — retry later or upgrade plan")
+        resp.raise_for_status()
+
+        results = resp.json().get("results") or []
+        self._grouped_cache[key] = results
+        return results
+
+    # ------------------------------------------------------------------
+    # Filtered universe (grouped daily → liquidity filter → cap)
+    # ------------------------------------------------------------------
+
+    async def filtered_universe(
+        self,
+        as_of: datetime,
+        min_price: float = 5,
+        min_dollar_volume: float = 5_000_000,
+        cap: int = 500,
+    ) -> list[str]:
+        """Build a scan universe from Polygon grouped daily data.
+
+        1. Fetch grouped daily for ``as_of`` date → price filter.
+        2. Fetch trailing window → compute median dollar-volume → volume filter.
+        3. Sort by dollar volume descending, cap at *cap*.
+        """
+        from app.config import settings
+
+        as_of_date = as_of.date()
+        window_dates = _trading_dates(as_of_date, settings.scan_liquidity_window)
+        if as_of_date not in window_dates:
+            window_dates.append(as_of_date)
+
+        # Fetch grouped daily for each date in the trailing window
+        all_data: dict[str, list[tuple[float, float]]] = {}
+        latest_price: dict[str, float] = {}
+
+        for d in window_dates:
+            rows = await self.grouped_daily(d)
+            is_latest = d == as_of_date
+            for row in rows:
+                ticker = row.get("T", "")
+                close = row.get("c", 0)
+                volume = row.get("v", 0)
+                if not ticker or close <= 0 or volume <= 0:
+                    continue
+                all_data.setdefault(ticker, []).append((close, volume))
+                if is_latest:
+                    latest_price[ticker] = close
+
+        # Price filter using as_of date's close
+        filtered: list[tuple[str, float]] = []
+        for ticker, days in all_data.items():
+            price = latest_price.get(ticker, 0)
+            if price < min_price:
+                continue
+
+            dollar_vols = sorted(c * v for c, v in days)
+            median_dv = dollar_vols[len(dollar_vols) // 2] if dollar_vols else 0
+
+            if median_dv < min_dollar_volume:
+                continue
+
+            filtered.append((ticker, median_dv))
+
+        filtered.sort(key=lambda x: x[1], reverse=True)
+        result = [t for t, _ in filtered[:cap]]
+        logger.info(
+            "Polygon filtered universe: %d tickers (from %d total, cap=%d)",
+            len(result), len(all_data), cap,
+        )
+        return result
 
     async def universe(self, as_of: datetime | None = None) -> list[str]:
         """Return a curated set of liquid US large-caps as the scan universe.
 
-        Polygon's full ticker reference contains thousands of symbols, which is
-        not a useful default for a research scan, so we reuse the curated
-        large-cap list (all real, tradeable tickers).
+        When ``filtered_universe`` is used for scans this is kept for
+        backwards-compat (backtest, research domain, etc.).
         """
         return sorted(SAMPLE_UNIVERSE)
 
@@ -251,3 +402,88 @@ def create_data_provider() -> Any:
 
     logger.info("No POLYGON_API_KEY configured — using SampleDataProvider")
     return SampleDataProvider()
+
+
+# ---------------------------------------------------------------------------
+# Scan orchestration
+# ---------------------------------------------------------------------------
+
+
+async def scan_universe(
+    archetype: dict,
+    as_of: datetime | None = None,
+) -> dict:
+    """Build a filtered universe, evaluate scan conditions, return ranked candidates.
+
+    Pipeline:
+      1. ``filtered_universe()`` — grouped daily → price/liquidity filter → cap
+      2. Short-circuit cheap conditions using grouped-daily data where possible
+      3. Fetch full bar history for survivors → evaluate all DSL scan conditions
+      4. Rank by fit score and return
+
+    Returns ``{"candidates": [...], "is_sample_fallback": bool}``.
+    """
+    from app.config import settings
+    from app.modules.data.features import evaluate_scan_block
+
+    provider = create_data_provider()
+    is_sample = isinstance(provider, SampleDataProvider)
+
+    scan_block = archetype.get("scan", {})
+    default_univ = archetype.get("default_universe", {})
+    min_price = default_univ.get("min_price", 5)
+    min_dollar_vol = default_univ.get("min_dollar_volume", 5_000_000)
+
+    if as_of is None:
+        as_of = datetime.now() - timedelta(days=1)
+
+    tickers = await provider.filtered_universe(
+        as_of=as_of,
+        min_price=min_price,
+        min_dollar_volume=min_dollar_vol,
+        cap=settings.scan_universe_cap,
+    )
+
+    lookback = timedelta(days=settings.scan_bar_lookback_days)
+    start = as_of - lookback
+    archetype_name = archetype.get("name", "")
+    archetype_family = archetype.get("family", "")
+
+    sem = asyncio.Semaphore(10)
+
+    async def _evaluate(ticker: str) -> dict | None:
+        async with sem:
+            try:
+                bars = await provider.bars(ticker, start, as_of, as_of=as_of)
+            except Exception:
+                logger.warning("Failed to fetch bars for %s — skipping", ticker)
+                return None
+            if bars.empty or len(bars) < 10:
+                return None
+            try:
+                score = evaluate_scan_block(scan_block, bars)
+            except Exception:
+                logger.debug("Scan eval error for %s — skipping", ticker, exc_info=True)
+                return None
+            if score <= 0:
+                return None
+            return {
+                "ticker": ticker,
+                "fit_score": round(score, 4),
+                "archetype": archetype_name,
+                "family": archetype_family,
+            }
+
+    results = await asyncio.gather(*[_evaluate(t) for t in tickers])
+    candidates = [r for r in results if r is not None]
+    candidates.sort(key=lambda c: c["fit_score"], reverse=True)
+
+    logger.info(
+        "Scan complete: %d/%d passed for archetype '%s'",
+        len(candidates), len(tickers), archetype_name,
+    )
+
+    return {
+        "candidates": candidates,
+        "is_sample_fallback": is_sample,
+    }

@@ -167,7 +167,7 @@ class TestFullPaperLoop:
         register_all_tools(registry)
 
         all_tools = registry.list_tools()
-        assert len(all_tools) == 11  # total tools in catalog
+        assert len(all_tools) == 12  # total tools in catalog
 
         # 2. Agent tools (READ + RISK_REDUCING) should NOT include deploy/approve
         agent_tools = registry.available_for_agent()
