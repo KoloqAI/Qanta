@@ -50,21 +50,42 @@ def deflated_sharpe(sr_hat, n, skew, kurt, n_eff, sigma_sr):
 ## 3. Probability of Backtest Overfitting (PBO via CSCV)
 ```
 def pbo_cscv(M, S):                     # M: T x N matrix of per-period returns for N configs; S even
+    if N < 2: return {pbo: None, ...}    # single-config: PBO undefined (see below)
     assert S % 2 == 0
     blocks = split_rows_contiguous(M, S)
     lam = []
     for IS_idx in combinations(range(S), S//2):       # symmetric: choose half as in-sample
         OOS_idx = [b for b in range(S) if b not in IS_idx]
         IS, OOS = stack(blocks, IS_idx), stack(blocks, OOS_idx)
-        n_star = argmax_config(perf(IS))              # best config in-sample
-        r = rank_of(perf(OOS), n_star) / (N + 1)      # its relative rank out-of-sample
+        n_star = argmax_config(sharpe(IS))            # best config in-sample
+        r = rank_of(sharpe(OOS), n_star) / N          # its relative rank out-of-sample (via rankdata)
         lam.append(log(r / (1 - r)))                  # logit; <=0 means below OOS median
-    pbo = mean([1 for x in lam if x <= 0]) / 1        # fraction of splits where IS-best is below OOS median
+    pbo = sum(1 for x in lam if x <= 0) / len(lam)   # fraction of splits where IS-best is below OOS median
     deg_slope = ols_slope(perf_IS_best, perf_OOS_same)   # negative = alarm (better IS -> worse OOS)
     prob_loss = mean([oos_sharpe(n_star) < 0 ...])
     return {pbo, deg_slope, prob_loss}
 ```
 - PBO ≈ 0 generalizes; ≈ 0.5 is a coin flip; > 0.5 actively overfit. Accept bar: PBO < 0.20; deg_slope ≥ 0.
+- **Multi-config (N ≥ 2):** The T×N matrix comes from the param-grid sweep — each column is one config's
+  return series from the same backtest window. Evolution T2 sweeps the **archetype's declared `param_grid`**
+  (entry lookbacks, thresholds, stop multipliers — the dimensions the strategy is actually selected on)
+  and backtests all variants, then passes the full matrix as `competing_returns` to `validate()`.
+  Combinatorial blow-up is bounded by `pbo.max_configs` (config/validation.yaml, default 20): the full
+  cartesian product is computed but down-sampled via strided selection (deterministic, seed=42) when it
+  exceeds the cap. The base spec is always included as variant 0.
+- **Load-time no-op guard:** Archetype templates use explicit `{param_name}` placeholders that the param_grid
+  fills via exact string substitution. At load time, `library_loader` validates bidirectional binding: every
+  param_grid key must have a `{key}` placeholder in the template, every placeholder must have a param_grid
+  entry with a `default:` value, and sampled variants must be distinct. Any archetype failing these checks is
+  **excluded from exploration** with a logged error — a declared-but-dead param can never silently feed PBO.
+  Competing-returns columns are also deduped at sweep time (identical return vectors are collapsed) so the
+  PBO matrix only contains genuinely distinct configs.
+- **Single-config (N < 2):** PBO is mathematically undefined (no selection to overfit). Returns `None`;
+  PBO gate is skipped. DSR (with `n_eff` counting hypothesis families, not param variants) carries the
+  deflation load. The `detail.pbo_note` field documents this.
+- **Ledger consistency:** `n_eff` counts independent hypothesis families (one per ticker/archetype in T2),
+  NOT individual param configs within a sweep. PBO measures within-family selection-overfitting from the
+  param grid. These are orthogonal — no double-counting that would distort either metric.
 
 ## 4. Confidence metric (Beta-Binomial, deflated)
 ```
@@ -113,8 +134,12 @@ def n_eff(family):
 ## 7. Verification suite (REQUIRED — these are the acceptance-gate tests for M3)
 | Test | Input | Expected |
 |------|-------|----------|
-| PBO on noise | N configs of i.i.d. random returns | PBO ≈ 0.5 (±0.1) |
-| PBO on seeded edge | a few configs with genuine persistent edge | PBO → low (< 0.2) |
+| PBO on noise | T×N matrix of i.i.d. random returns (N=10) | PBO ≈ 0.5 (±0.2) |
+| PBO on seeded edge | T×N matrix, one config with genuine drift | PBO → low (< 0.3) |
+| PBO single-config | T×1 or 1-D returns | PBO = None (gate skipped) |
+| PBO gate rejects overfit | T×N noise matrix passed as competing_returns | PBO > 0.20 → gate False |
+| Entry-param overfit rejected | T×N matrix: one config IS-tuned, poor OOS neighbors | PBO > 0.20 → gate False |
+| Robust entry param passes | T×N matrix: genuine edge, graceful degradation | PBO ≤ 0.20 → gate True |
 | DSR monotonic in N | fixed sr_hat, increasing n_eff | DSR strictly decreasing |
 | DSR skew penalty | equal sr_hat, skew −0.6 vs 0 | skewed scores lower |
 | Walk-forward leakage | a strategy using a future value | caught/blocked or OOS collapses |

@@ -20,6 +20,7 @@ walk_forward:
 
 pbo:
   n_blocks: 10                     # S in CSCV (must be even)
+  max_configs: 20                  # cap on competing configs per sweep (bounds combinatorial blow-up)
 
 robustness:
   param_sweep_pct: 20              # +/- range for parameter sensitivity

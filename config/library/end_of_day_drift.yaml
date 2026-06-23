@@ -13,7 +13,7 @@ regime:
 entry:
   when:
     all_of:
-      - { gt: ["close", "sma(5)"] }
+      - { gt: ["close", "sma({entry_sma})"] }
       - { gt: ["avg_volume(20)", 1000000] }
   action: enter_long
   sizing:
@@ -22,7 +22,7 @@ entry:
 
 exits:
   - stop_loss:
-      atr_mult: 0.5
+      atr_mult: "{stop_atr}"
   - take_profit:
       atr_mult: 0.8
   - time_stop:
@@ -35,8 +35,8 @@ risk:
   max_gross_exposure: 25.0
 
 param_grid:
-  entry_sma: { min: 3, max: 10, step: 1 }
-  stop_atr: { min: 0.3, max: 0.7, step: 0.1 }
+  entry_sma: { min: 3, max: 10, step: 1, default: 5 }
+  stop_atr: { min: 0.3, max: 0.7, step: 0.1, default: 0.5 }
 
 scan:
   all_of:

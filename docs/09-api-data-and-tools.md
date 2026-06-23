@@ -72,9 +72,10 @@ research_runs(id pk, user_id fk, goal text, mode, trials_count int, status, crea
 trials(id pk, research_run_id fk, params jsonb, in_sample_sharpe float, spec_hash)
 backtest_runs(id pk, strategy_version_id fk, window jsonb, sharpe float, max_dd float,
               net_edge float, frictionless_edge float, equity_curve jsonb, n_trades int)
-validation_reports(id pk, strategy_version_id fk, deflated_sharpe float, pbo float,
-                   deg_slope float, peer_hit float, n_eff int, passed bool,
+validation_reports(id pk, strategy_version_id fk, deflated_sharpe float, pbo float nullable,
+                   deg_slope float nullable, peer_hit float, n_eff int, passed bool,
                    confidence_curve jsonb, detail jsonb, created_at)
+                   -- pbo/deg_slope nullable: NULL = single-config (PBO undefined)
 deployments(id pk, strategy_version_id fk, mode enum(paper,live), status, guardrails jsonb,
             capital_budget float, started_at, ended_at)
 orders(id pk, deployment_id fk, symbol, side, qty float, type, status, ts)
@@ -99,14 +100,18 @@ Scope every user-owned row by `user_id` (single-user now, multi-user-ready).
 | `universe_scan` | read | {archetype_id?, as_of?} → {candidates: [{ticker, fit_score, archetype, family}], is_sample_fallback: bool}. Builds universe via Polygon grouped-daily → liquidity filter (median dollar-vol, trailing window) → DSL scan evaluation → ranked results. Sample fallback when no real provider configured. |
 | `technical_analysis` | read | ticker, indicators → analysis (uses DSL features) |
 | `characterize_ticker` | read | ticker → regime/behavior profile + stats |
-| `news_search` | read | ticker/window → news items (only if news module enabled) |
-| `author_strategy` | read | thesis + intent → DSL spec |
+| `news_search` | read | **planned** — ticker/window → news items (requires news module). Not yet implemented. |
+| `author_strategy` | read | thesis + intent → DSL spec (LLM-authored, DSL type-check gate applied). Falls back to template with `is_fallback_template: true` when no LLM configured. |
 | `backtest` | read | spec, window → BacktestResult |
-| `validate` | read | spec, n_eff? → ValidationReport (gauntlet incl. peer-hit gate; logs to ledger). gates_version tracks gate-set evolution; stale reports blocked from approval/deployment. |
-| `peer_test` | read | {spec, peers?, as_of?} → {peer_hit, n_peers_tested, n_peers_with_edge, sufficient, details}. Backtests spec on correlation-based peers (point-in-time). Peers auto-selected via return correlation if not explicit. Fails closed when peer data is insufficient. Peer backtests count toward the single validation (search-budget ledger). |
+| `validate` | read | spec, n_eff?, competing_returns? → ValidationReport. Gauntlet incl. peer-hit gate and multi-config PBO (via CSCV). When `competing_returns` (T×N matrix, N≥2) is provided, computes real PBO over the param-grid configs; otherwise PBO=None (single-config: gate skipped, DSR+n_eff carry deflation). `gates_version` tracks gate-set evolution; stale reports blocked from approval/deployment. |
+| `peer_test` | read | {spec, peers?, as_of?} → {peer_hit, n_peers_tested, n_peers_with_edge, sufficient, details}. Backtests spec on correlation-based peers (point-in-time). Peers auto-selected via return correlation if not explicit. Fails closed when peer data is insufficient. |
 | `query_book` | read | — → portfolio/positions/exposure |
-| `query_performance` | read | filter → history, realized-vs-expected, calibration |
-| `pause_deployment` `flatten_deployment` `halt_deployment` | risk_reducing | deployment_id → ack (assistant may execute; fail-safe) |
-| `deploy_strategy` `approve_strategy` `promote_to_live` `set_guardrail` `place_order` | risk_increasing | … → STAGED only; executed by deterministic code after an Approval; never invoked by an LLM |
+| `query_performance` | read | **planned** — filter → history, realized-vs-expected, calibration. Not yet implemented. |
+| `pause_deployment` `flatten_deployment` | risk_reducing | deployment_id → ack (assistant may execute; fail-safe) |
+| `halt_deployment` | risk_reducing | **planned** — not yet registered; use `pause_deployment` + `flatten_deployment`. |
+| `deploy_strategy` `approve_strategy` | risk_increasing | … → STAGED only; executed by deterministic code after an Approval; never invoked by an LLM |
+| `promote_to_live` `set_guardrail` `place_order` | risk_increasing | **planned** — not yet registered. Will be STAGED-only like deploy/approve. |
 
-Workflows are declarative pipelines over these tools (e.g., evolution T2: `universe_scan → author_strategy → backtest → validate`), runnable on a schedule without an interactive agent.
+12 tools registered as of `gates_version` 2.
+
+Workflows are declarative pipelines over these tools (e.g., evolution T2: `universe_scan → author_strategy → backtest(param grid) → validate(competing_returns)`), runnable on a schedule without an interactive agent.

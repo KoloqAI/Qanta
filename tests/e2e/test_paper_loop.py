@@ -56,7 +56,7 @@ class TestFullPaperLoop:
         report = await harness.validate(spec, bars, n_eff=1)
         assert isinstance(report.passed, bool)
         assert isinstance(report.deflated_sharpe, float)
-        assert isinstance(report.pbo, float)
+        assert report.pbo is None or isinstance(report.pbo, float)
 
         # 6. Simulate human approval
         approval_record = {

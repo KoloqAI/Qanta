@@ -74,6 +74,7 @@ packages = ["app"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]
+markers = ["timeout: soft per-test timeout (enforced when pytest-timeout is installed)"]
 
 [tool.ruff]
 target-version = "py312"

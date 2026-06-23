@@ -23,23 +23,23 @@ name: Range mean-reversion
 family: mean_reversion          # see catalog families below
 horizon: both                   # intraday | swing | both
 thesis: "Oversold extensions to a range edge fade; liquidity provision vs transient noise."
-watches: [close, range_detect, atr, rsi, avg_volume, realized_vol]   # DSL features it uses
-regime: { all_of: [ {range_detect(20).in_range: true},
-                    {between: ["realized_vol(20)", 0.12, 0.45]} ] }   # when the archetype is valid
-entry:  { when: {lt: ["close", {expr: "rolling_low(20) + 0.4*atr(14)"}]},
+watches: [close, range_detect, atr, rsi, avg_volume, realized_vol]
+regime: { all_of: [ {gt: ["avg_volume(20)", 1000000]},
+                    {between: ["realized_vol(20)", 0.12, 0.45]} ] }
+entry:  { when: { all_of: [ {lt: ["rsi(14)", "{entry_rsi}"]},
+                             {lt: ["close", "rolling_low({rolling_n})"]} ] },
           action: enter_long, sizing: {vol_scaled: {target_vol: 0.10}} }
-exits:  [ {stop_loss: {atr_mult: 0.9, ref: "rolling_low(20)"}},
-          {take_profit: {ref: "range_detect(20).mid"}},
+exits:  [ {stop_loss: {atr_mult: "{stop_atr}"}},
+          {take_profit: {atr_mult: 2.0}},
           {time_stop: {sessions: 7}}, {regime_break_exit: true} ]
-param_grid:                     # the search space exploration sweeps within
-  rolling_n: {min: 10, max: 40, step: 5}
-  entry_atr: {min: 0.2, max: 0.8, step: 0.1}
-  stop_atr:  {min: 0.6, max: 1.4, step: 0.2}
-scan:                           # the screen that surfaces candidate tickers at a point in time
+param_grid:                     # explicit {param} placeholders filled at sweep time
+  rolling_n: {min: 10, max: 40, step: 5, default: 20}
+  entry_rsi: {min: 20, max: 40, step: 5, default: 30}
+  stop_atr:  {min: 0.6, max: 1.4, step: 0.2, default: 0.9}
+scan:
   all_of: [ {gt: ["avg_volume(20)", 1000000]},
-            {range_detect(20).in_range: true},
             {lt: ["zscore(20)", -1.0]} ]
-peers_hint: sector_or_corr      # how to build the peer set for peer-testing
+peers_hint: sector_or_corr
 default_universe: {min_price: 5, min_dollar_volume: 5000000}
 ```
 
@@ -90,6 +90,38 @@ for archetype in library (budget-ordered):
 - Survivors go to the Review Queue with their deflated confidence; you approve; paper precedes live.
 - Budget cap (config) bounds aggression per cycle; the agent may also *compose across* archetypes (T2) and
   *propose new* archetypes (T3, human-gated) — both ledger-tracked, never relaxing thresholds.
+
+### Param-grid sweep contract (T2 implementation detail)
+The T2 loop sweeps the **archetype's declared `param_grid`** — entry lookbacks, thresholds, stop multipliers,
+widths — not a hardcoded stop-loss grid. Each YAML archetype declares `{min, max, step, default}` ranges
+for its relevant parameters (e.g. `rsi_period`, `rsi_threshold`, `stop_atr` for `rsi_reversion`).
+
+**Explicit placeholder binding.** Templates use `{param_name}` placeholders that the param_grid fills via
+exact string substitution — no naming-convention regex inference. A pure-value placeholder (`"{stop_atr}"`)
+is replaced with the raw numeric; an embedded placeholder (`"rsi({rsi_period})"`) is string-formatted.
+Every param_grid key must have a corresponding `{key}` in the template; every placeholder must have a
+param_grid entry with a `default:` value. Violations are caught at archetype load time — any archetype
+with an unbound param, unfilled placeholder, or missing default is **excluded from exploration** with a
+logged error. Variant distinctness is also spot-checked at load: if sampled combos produce duplicate specs,
+the archetype is excluded. This guarantees 0 no-op params feeding PBO.
+
+The sweep:
+
+1. Fills the template with `default` values to produce the **base variant** (variant 0).
+2. Computes the full cartesian product of all `param_grid` dimensions.
+3. If the product exceeds `pbo.max_configs` (config/validation.yaml, default 20), down-samples via
+   deterministic strided selection (seed=42) — evenly spaced across the sorted product, not random truncation.
+4. For each selected combination, fills placeholders to produce a variant. **Deduplicates** variants via
+   JSON-serialized comparison — identical specs never appear twice in the matrix.
+5. Backtests all distinct variants, builds a T×N competing-returns matrix, selects the IS-best config.
+6. Passes the full matrix as `competing_returns` to `validate()` → real multi-config PBO (doc 08 §3).
+   Reports both `n_configs_swept` and `n_configs_distinct` in survivor dicts.
+
+When no archetype grid is available (non-archetype callers), falls back to stop-loss-only variation.
+
+**n_eff accounting:** `n_eff` increments once per ticker/archetype family (one independent hypothesis),
+regardless of how many param configs the grid produces. PBO measures within-family selection-overfitting;
+DSR deflates across families. Orthogonal, no double-counting.
 
 ## 2. Library / Explore UI (extends the Registry screen)
 Registry gains two tabs: **Instantiated** (today's registry: all strategies across the lifecycle) and

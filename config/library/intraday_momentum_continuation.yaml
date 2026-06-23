@@ -13,7 +13,7 @@ regime:
 entry:
   when:
     all_of:
-      - { gt: ["close", "rolling_high(5)"] }
+      - { gt: ["close", "rolling_high({lookback})"] }
       - { gt: ["volume", "avg_volume(20)"] }
   action: enter_long
   sizing:
@@ -22,7 +22,7 @@ entry:
 
 exits:
   - stop_loss:
-      atr_mult: 0.6
+      atr_mult: "{stop_atr}"
   - take_profit:
       atr_mult: 1.2
   - time_stop:
@@ -35,8 +35,8 @@ risk:
   max_gross_exposure: 25.0
 
 param_grid:
-  lookback: { min: 3, max: 8, step: 1 }
-  stop_atr: { min: 0.4, max: 0.8, step: 0.1 }
+  lookback: { min: 3, max: 8, step: 1, default: 5 }
+  stop_atr: { min: 0.4, max: 0.8, step: 0.1, default: 0.6 }
 
 scan:
   all_of:

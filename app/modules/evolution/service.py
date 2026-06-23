@@ -1,8 +1,19 @@
 from __future__ import annotations
 
+import copy
+import itertools
+import json
 import uuid
 from datetime import datetime
 from typing import Any, Protocol
+
+import numpy as np
+
+from app.modules.registry.library_loader import (
+    _fill_placeholders,
+    _extract_defaults,
+    resolve_grid_values,
+)
 
 
 class EvolutionLoop(Protocol):
@@ -10,6 +21,91 @@ class EvolutionLoop(Protocol):
     async def run_tier2(self, budget: int) -> dict: ...
     async def propose_tier3(self, proposal: dict) -> dict: ...
     async def get_meta_lockbox_result(self) -> dict: ...
+
+
+# ---------------------------------------------------------------------------
+# Param-grid helpers
+# ---------------------------------------------------------------------------
+
+
+def _build_archetype_variants(
+    template: dict,
+    grid: dict[str, dict],
+    n_max: int,
+) -> list[dict]:
+    """Build spec variants from an archetype's param_grid using explicit
+    placeholder filling.
+
+    *template* contains ``{param}`` placeholders; *grid* entries have
+    ``default`` values.  The base variant uses defaults; sweep variants
+    fill other combos from the cartesian product (strided-sampled if
+    it exceeds *n_max*).
+
+    Returns a **deduplicated** list — identical specs never appear twice.
+    """
+    defaults = _extract_defaults(grid)
+    base = _fill_placeholders(template, defaults)
+
+    param_names = list(grid.keys())
+    param_values = [resolve_grid_values(grid[k]) for k in param_names]
+
+    full_product = list(itertools.product(*param_values))
+    if not full_product:
+        return [base]
+
+    if len(full_product) > n_max:
+        indices = np.round(np.linspace(0, len(full_product) - 1, n_max)).astype(int)
+        indices = list(dict.fromkeys(indices))
+        if len(indices) < n_max:
+            rng = np.random.default_rng(42)
+            remaining = [i for i in range(len(full_product)) if i not in set(indices)]
+            extra = rng.choice(remaining, min(n_max - len(indices), len(remaining)), replace=False)
+            indices.extend(int(e) for e in extra)
+        selected = [full_product[i] for i in sorted(indices[:n_max])]
+    else:
+        selected = full_product
+
+    seen = {json.dumps(base, sort_keys=True, default=str)}
+    variants: list[dict] = [base]
+
+    for combo in selected:
+        values = dict(zip(param_names, combo))
+        variant = _fill_placeholders(template, values)
+        key = json.dumps(variant, sort_keys=True, default=str)
+        if key not in seen:
+            seen.add(key)
+            variants.append(variant)
+
+    return variants if len(variants) >= 2 else [base]
+
+
+def _build_stop_loss_variants(spec_raw: dict, n_max: int) -> list[dict]:
+    """Fallback: vary stop_loss when no archetype grid is available."""
+    variants: list[dict] = [spec_raw]
+    base_stop: float | None = None
+    stop_idx: int | None = None
+    for i, rule in enumerate(spec_raw.get("exits", [])):
+        if isinstance(rule, dict) and "stop_loss" in rule:
+            sl = rule["stop_loss"]
+            if isinstance(sl, dict):
+                base_stop = sl.get("pct") or sl.get("atr_mult")
+                stop_idx = i
+            break
+    if base_stop is None or stop_idx is None:
+        return variants
+
+    field = "pct" if "pct" in spec_raw["exits"][stop_idx]["stop_loss"] else "atr_mult"
+    multipliers = [0.50, 0.67, 0.80, 1.25, 1.50, 1.80, 2.00]
+    for mult in multipliers:
+        if len(variants) >= n_max:
+            break
+        variant = copy.deepcopy(spec_raw)
+        new_val = round(base_stop * mult, 2)
+        variant["exits"][stop_idx]["stop_loss"][field] = new_val
+        if field == "pct" and isinstance(variant.get("risk"), dict):
+            variant["risk"]["per_trade_stop_pct"] = new_val
+        variants.append(variant)
+    return variants
 
 
 # ---------------------------------------------------------------------------
@@ -144,18 +240,25 @@ class EvolutionLoopImpl:
     # ------------------------------------------------------------------
 
     async def run_tier2(self, budget: int) -> dict:
-        """Budgeted discovery — compose and validate new strategies.
+        """Budgeted discovery — compose, sweep, and validate new strategies.
 
         1. Scan for candidates using ShortTermEquityDomain
-        2. Compose specs using StrategyAuthorImpl
-        3. Parse and validate each through ValidationHarnessImpl
-        4. Track N_eff for DSR deflation
-        5. Keep only survivors that pass validation
+        2. Compose base specs using StrategyAuthorImpl
+        3. Generate param-grid variants from the archetype's declared grid
+           (entry lookbacks, thresholds, stop multipliers — the real search space)
+        4. Backtest all variants, build T×N competing-returns matrix
+        5. Select IS-best config as the winner
+        6. Validate winner with competing_returns → real multi-config PBO
+        7. n_eff counts hypothesis families (one per ticker), NOT individual
+           param variants — PBO measures within-family selection-overfitting,
+           DSR deflates across families.  Orthogonal, no double-counting.
         """
         from app.modules.research.service import ShortTermEquityDomain, StrategyAuthorImpl
         from app.core.dsl.parser import parse_spec
-        from app.modules.validation.service import ValidationHarnessImpl
+        from app.modules.backtest.service import BacktesterImpl
+        from app.modules.validation.service import ValidationHarnessImpl, _load_validation_config
         from app.modules.data.providers import create_data_provider, recent_window
+        from app.modules.registry.library_loader import load_archetypes
 
         survivors: list[dict] = []
         trials_run = 0
@@ -164,8 +267,12 @@ class EvolutionLoopImpl:
         author = StrategyAuthorImpl()
         harness = ValidationHarnessImpl()
         provider = create_data_provider()
+        bt = BacktesterImpl()
 
-        # Scan for candidate tickers
+        val_config = _load_validation_config()
+        max_configs = val_config.get("pbo", {}).get("max_configs", 20)
+        archetypes = load_archetypes(validate=False)
+
         candidates = await domain.scan("short-term momentum and mean-reversion", {})
 
         for candidate in candidates:
@@ -174,30 +281,90 @@ class EvolutionLoopImpl:
 
             ticker = candidate.get("ticker", "AAPL")
 
-            # Compose a strategy spec for this candidate
             spec_raw = await author.author(
                 f"Short-term opportunity in {ticker}",
                 {"ticker": ticker},
             )
 
-            # Parse the spec
             parse_result = parse_spec(spec_raw)
             if not parse_result.success:
                 trials_run += 1
                 self._n_eff += 1
                 continue
 
-            # Fetch bars for validation
             val_start, val_end = recent_window(700)
             bars = await provider.bars(ticker, val_start, val_end)
 
-            # Run validation gauntlet with accumulated N_eff
+            # Resolve archetype template + param_grid for this candidate
+            archetype_id = candidate.get("archetype", "")
+            archetype = archetypes.get(archetype_id, {})
+            archetype_grid = archetype.get("param_grid") or None
+            archetype_template = archetype.get("template") if archetype_grid else None
+
+            variants = self._generate_param_grid(
+                archetype_template or spec_raw,
+                n_variants=max_configs,
+                archetype_grid=archetype_grid,
+            )
+            all_returns: list[np.ndarray] = []
+            valid_specs: list[Any] = []
+            valid_raws: list[dict] = []
+
+            for var_raw in variants:
+                var_parse = parse_spec(var_raw)
+                if not var_parse.success:
+                    continue
+                try:
+                    result = await bt.run(var_parse.spec, bars)
+                    equities = [e["equity"] for e in result.equity_curve]
+                    if len(equities) > 1:
+                        rets = np.diff(equities) / np.array(equities[:-1], dtype=float)
+                        all_returns.append(rets)
+                        valid_specs.append(var_parse.spec)
+                        valid_raws.append(var_raw)
+                except Exception:
+                    continue
+
+            # Build competing-returns matrix (T×N), dedup identical columns
+            competing_returns: np.ndarray | None = None
+            n_configs_distinct = len(all_returns)
+            if len(all_returns) >= 2:
+                min_t = min(len(r) for r in all_returns)
+                raw_matrix = np.column_stack([r[:min_t] for r in all_returns])
+                # Dedupe identical return columns
+                seen_cols: dict[bytes, int] = {}
+                unique_indices: list[int] = []
+                for j in range(raw_matrix.shape[1]):
+                    key = raw_matrix[:, j].tobytes()
+                    if key not in seen_cols:
+                        seen_cols[key] = j
+                        unique_indices.append(j)
+                n_configs_distinct = len(unique_indices)
+                if n_configs_distinct >= 2:
+                    competing_returns = raw_matrix[:, unique_indices]
+
+            # Select winner: best Sharpe across variants
+            if valid_specs:
+                sharpes = [
+                    float(np.mean(r) / np.std(r)) if np.std(r) > 0 else 0.0
+                    for r in all_returns
+                ]
+                winner_idx = int(np.argmax(sharpes))
+                winner_spec = valid_specs[winner_idx]
+                winner_raw = valid_raws[winner_idx]
+            else:
+                winner_spec = parse_result.spec
+                winner_raw = spec_raw
+
+            # n_eff counts families (one per ticker), not param variants
             self._n_eff += 1
             trials_run += 1
 
             try:
                 report = await harness.validate(
-                    parse_result.spec, bars, n_eff=self._n_eff
+                    winner_spec, bars,
+                    n_eff=self._n_eff,
+                    competing_returns=competing_returns,
                 )
             except Exception:
                 continue
@@ -205,9 +372,11 @@ class EvolutionLoopImpl:
             if report.passed:
                 discovery = {
                     "ticker": ticker,
-                    "spec": spec_raw,
+                    "spec": winner_raw,
                     "deflated_sharpe": report.deflated_sharpe,
                     "pbo": report.pbo,
+                    "n_configs_swept": len(valid_specs),
+                    "n_configs_distinct": n_configs_distinct,
                     "n_eff_at_discovery": self._n_eff,
                     "ts": datetime.utcnow().isoformat(),
                 }
@@ -222,6 +391,32 @@ class EvolutionLoopImpl:
             "n_eff": self._n_eff,
             "summary": f"T2: {trials_run}/{budget} trials, {len(survivors)} survivors",
         }
+
+    # ------------------------------------------------------------------
+    # Param grid for multi-config PBO
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _generate_param_grid(
+        spec_raw: dict,
+        n_variants: int = 20,
+        archetype_grid: dict[str, dict] | None = None,
+    ) -> list[dict]:
+        """Generate parameter variants via explicit placeholder filling.
+
+        When *archetype_grid* is provided, *spec_raw* is the archetype
+        **template** (with ``{param}`` placeholders).  Defaults fill the
+        base variant; the cartesian product of grid values fills the rest
+        (strided-sampled if exceeding *n_variants*).  All variants are
+        deduplicated — identical specs never appear twice.
+
+        When *archetype_grid* is None, falls back to stop_loss
+        variation only (backward compat for non-archetype callers).
+        """
+        if archetype_grid:
+            return _build_archetype_variants(spec_raw, archetype_grid, n_variants)
+
+        return _build_stop_loss_variants(spec_raw, n_variants)
 
     # ------------------------------------------------------------------
     # T3 — Capability Proposals (human-gated) — already implemented

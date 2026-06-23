@@ -30,8 +30,8 @@ def _load_validation_config() -> dict[str, Any]:
 @dataclass
 class ValidationReport:
     deflated_sharpe: float
-    pbo: float
-    deg_slope: float
+    pbo: float | None  # None when single-config (PBO undefined; DSR carries deflation)
+    deg_slope: float | None
     peer_hit: float
     n_eff: int
     passed: bool
@@ -78,6 +78,7 @@ class ValidationHarnessImpl:
         peer_tickers: list[str] | None = None,
         provider=None,
         as_of=None,
+        competing_returns: np.ndarray | None = None,
     ) -> ValidationReport:
         bt = BacktesterImpl()
         result = await bt.run(spec, bars)
@@ -101,8 +102,11 @@ class ValidationHarnessImpl:
         )
         dsr = self._deflated_sharpe(sr_hat, n_obs, skew, kurt, n_eff, sigma_sr)
 
-        # PBO via CSCV
-        pbo_result = self._pbo_cscv(returns, n_blocks=n_splits)
+        # PBO via multi-config CSCV (doc 08 §3)
+        if competing_returns is not None and competing_returns.ndim == 2 and competing_returns.shape[1] >= 2:
+            pbo_result = self._pbo_cscv(competing_returns, n_blocks=n_splits)
+        else:
+            pbo_result = {"pbo": None, "deg_slope": None, "prob_loss": None}
         pbo = pbo_result["pbo"]
         deg_slope = pbo_result["deg_slope"]
 
@@ -116,11 +120,11 @@ class ValidationHarnessImpl:
         peer_hit = peer_hit_result["peer_hit"]
         peer_sufficient = peer_hit_result["sufficient"]
 
-        # Gate checks
+        # Gate checks — PBO gate skipped for single-config (DSR carries deflation)
         gates = {
             "dsr": dsr >= self._dsr_threshold,
-            "pbo": pbo <= self._pbo_threshold,
-            "deg_slope": deg_slope >= 0,
+            "pbo": pbo <= self._pbo_threshold if pbo is not None else True,
+            "deg_slope": deg_slope >= 0 if deg_slope is not None else True,
             "min_trades": result.n_trades >= self._min_trades,
             "cost_edge": (
                 result.net_edge >= self._cost_edge_ratio * result.frictionless_edge
@@ -137,8 +141,8 @@ class ValidationHarnessImpl:
 
         return ValidationReport(
             deflated_sharpe=round(dsr, 4),
-            pbo=round(pbo, 4),
-            deg_slope=round(deg_slope, 4),
+            pbo=round(pbo, 4) if pbo is not None else None,
+            deg_slope=round(deg_slope, 4) if deg_slope is not None else None,
             peer_hit=round(peer_hit, 4),
             n_eff=n_eff,
             passed=passed,
@@ -153,6 +157,10 @@ class ValidationHarnessImpl:
                 "net_edge": result.net_edge,
                 "frictionless_edge": result.frictionless_edge,
                 "peer_hit_detail": peer_hit_result,
+                "pbo_note": (
+                    "single-config: PBO undefined, gate skipped; DSR+n_eff carry deflation"
+                    if pbo is None else None
+                ),
             },
         )
 
@@ -288,16 +296,35 @@ class ValidationHarnessImpl:
         sr_star = self._expected_max_sharpe(n_eff, sigma_sr)
         return self._psr(sr_hat, sr_star, n, skew, kurt)
 
-    def _pbo_cscv(self, returns: np.ndarray, n_blocks: int = 6) -> dict[str, float]:
-        """Probability of Backtest Overfitting via Combinatorial Symmetric Cross-Validation."""
+    def _pbo_cscv(
+        self, returns_matrix: np.ndarray, n_blocks: int = 6,
+    ) -> dict[str, float | None]:
+        """Probability of Backtest Overfitting via multi-config CSCV (doc 08 §3).
+
+        Args:
+            returns_matrix: T×N array where T=periods, N=competing configs.
+                            Each column is one config's return series.
+            n_blocks: number of time blocks (must be even).
+
+        For each symmetric IS/OOS split of the time blocks:
+          1. Compute Sharpe of every config on IS → pick IS-best (argmax).
+          2. Compute Sharpe of every config on OOS → rank IS-best among all.
+          3. Fractional rank r = rank / N.  Logit w = log(r / (1-r)).
+          4. If w ≤ 0 the IS-best is below-median OOS → overfit.
+        PBO = fraction of splits where w ≤ 0.
+        """
+        if returns_matrix.ndim != 2 or returns_matrix.shape[1] < 2:
+            return {"pbo": None, "deg_slope": None, "prob_loss": None}
+
+        T, N = returns_matrix.shape
         if n_blocks % 2 != 0:
             n_blocks = max(n_blocks - 1, 4)
-        n = len(returns)
-        if n < n_blocks * 10:
-            return {"pbo": 0.5, "deg_slope": 0.0, "prob_loss": 0.5}
+        if T < n_blocks * 10:
+            return {"pbo": None, "deg_slope": None, "prob_loss": None}
 
-        block_size = n // n_blocks
-        blocks = [returns[i * block_size : (i + 1) * block_size] for i in range(n_blocks)]
+        block_size = T // n_blocks
+        # blocks[i] is shape (block_size, N)
+        blocks = [returns_matrix[i * block_size : (i + 1) * block_size] for i in range(n_blocks)]
 
         half = n_blocks // 2
         combos = list(combinations(range(n_blocks), half))
@@ -306,36 +333,42 @@ class ValidationHarnessImpl:
             indices = rng.choice(len(combos), 50, replace=False)
             combos = [combos[i] for i in indices]
 
-        logits = []
-        is_perfs: list[float] = []
-        oos_perfs: list[float] = []
+        logits: list[float] = []
+        is_best_perfs: list[float] = []
+        oos_best_perfs: list[float] = []
 
         for is_idx in combos:
             oos_idx = tuple(b for b in range(n_blocks) if b not in is_idx)
-            is_returns = np.concatenate([blocks[i] for i in is_idx])
-            oos_returns = np.concatenate([blocks[i] for i in oos_idx])
+            is_data = np.concatenate([blocks[i] for i in is_idx], axis=0)   # (T/2, N)
+            oos_data = np.concatenate([blocks[i] for i in oos_idx], axis=0) # (T/2, N)
 
-            is_sharpe = self._sharpe_ratio(is_returns)
-            oos_sharpe = self._sharpe_ratio(oos_returns)
+            # Sharpe per config on IS and OOS
+            is_sharpes = np.array([self._sharpe_ratio(is_data[:, j]) for j in range(N)])
+            oos_sharpes = np.array([self._sharpe_ratio(oos_data[:, j]) for j in range(N)])
 
-            is_perfs.append(is_sharpe)
-            oos_perfs.append(oos_sharpe)
+            n_star = int(np.argmax(is_sharpes))
+            is_best_perfs.append(float(is_sharpes[n_star]))
+            oos_best_perfs.append(float(oos_sharpes[n_star]))
 
-            # For single-config: rank is binary (above or below median=0)
-            r = 0.5 if oos_sharpe >= 0 else 0.25
-            logit = np.log(r / (1 - r + 1e-10))
+            # Rank of IS-best config in OOS (1=worst, N=best)
+            ranks = scipy_stats.rankdata(oos_sharpes)
+            r = float(ranks[n_star]) / N
+
+            # Clamp away from 0 and 1 to keep logit finite
+            r = np.clip(r, 1e-6, 1 - 1e-6)
+            logit = float(np.log(r / (1 - r)))
             logits.append(logit)
 
-        pbo = sum(1 for x in logits if x <= 0) / max(len(logits), 1)
+        pbo = sum(1 for w in logits if w <= 0) / max(len(logits), 1)
 
-        # Degradation slope
-        if len(is_perfs) > 1:
-            slope, _, _, _, _ = scipy_stats.linregress(is_perfs, oos_perfs)
+        # Degradation slope: regress OOS perf of IS-best on IS perf of IS-best
+        if len(is_best_perfs) > 1:
+            slope, _, _, _, _ = scipy_stats.linregress(is_best_perfs, oos_best_perfs)
             deg_slope = float(slope)
         else:
             deg_slope = 0.0
 
-        prob_loss = sum(1 for o in oos_perfs if o < 0) / max(len(oos_perfs), 1)
+        prob_loss = sum(1 for o in oos_best_perfs if o < 0) / max(len(oos_best_perfs), 1)
 
         return {"pbo": pbo, "deg_slope": deg_slope, "prob_loss": prob_loss}
 

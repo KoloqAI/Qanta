@@ -103,6 +103,16 @@ def _force_stub_llm(monkeypatch):
     )
 
 
+@pytest.fixture
+def _force_sample_provider(monkeypatch):
+    """Force SampleDataProvider so tests never hit real Polygon."""
+    from app.modules.data.providers import SampleDataProvider
+    monkeypatch.setattr(
+        "app.modules.data.providers.create_data_provider",
+        lambda: SampleDataProvider(),
+    )
+
+
 async def test_author_tool_produces_ticker_specific_specs(
     registry, _force_stub_llm,
 ):
@@ -236,7 +246,8 @@ def test_peer_test_tool_registered(registry):
     assert tool.permission == Permission.READ
 
 
-async def test_peer_test_generalizing_strategy(registry):
+@pytest.mark.timeout(30)
+async def test_peer_test_generalizing_strategy(registry, _force_sample_provider):
     """A strategy that generalizes to correlated peers passes.
 
     SampleDataProvider produces synthetic data with similar structure

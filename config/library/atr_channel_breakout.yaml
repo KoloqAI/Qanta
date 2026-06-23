@@ -13,7 +13,7 @@ regime:
 entry:
   when:
     all_of:
-      - { gt: ["close", "sma(20)"] }
+      - { gt: ["close", "sma({sma_period})"] }
       - { gt: ["atr(14)", 0.5] }
   action: enter_long
   sizing:
@@ -22,9 +22,9 @@ entry:
 
 exits:
   - stop_loss:
-      atr_mult: 1.5
+      atr_mult: "{stop_atr}"
   - trailing_stop:
-      atr_mult: 2.0
+      atr_mult: "{atr_mult}"
   - time_stop:
       sessions: 15
   - regime_break_exit: true
@@ -35,9 +35,9 @@ risk:
   max_gross_exposure: 40.0
 
 param_grid:
-  sma_period: { min: 15, max: 30, step: 5 }
-  atr_mult: { min: 1.0, max: 2.5, step: 0.25 }
-  stop_atr: { min: 1.0, max: 2.0, step: 0.25 }
+  sma_period: { min: 15, max: 30, step: 5, default: 20 }
+  atr_mult: { min: 1.0, max: 2.5, step: 0.25, default: 2.0 }
+  stop_atr: { min: 1.0, max: 2.0, step: 0.25, default: 1.5 }
 
 scan:
   all_of:

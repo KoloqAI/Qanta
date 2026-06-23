@@ -13,7 +13,7 @@ regime:
 entry:
   when:
     all_of:
-      - { lt: ["close", "vwap(20)"] }
+      - { lt: ["close", "vwap({vwap_period})"] }
       - { gt: ["volume", "avg_volume(20)"] }
   action: enter_long
   sizing:
@@ -22,7 +22,7 @@ entry:
 
 exits:
   - stop_loss:
-      atr_mult: 0.7
+      atr_mult: "{stop_atr}"
   - take_profit:
       atr_mult: 1.2
   - time_stop:
@@ -35,8 +35,8 @@ risk:
   max_gross_exposure: 30.0
 
 param_grid:
-  vwap_period: { min: 10, max: 30, step: 5 }
-  stop_atr: { min: 0.5, max: 1.0, step: 0.1 }
+  vwap_period: { min: 10, max: 30, step: 5, default: 20 }
+  stop_atr: { min: 0.5, max: 1.0, step: 0.1, default: 0.7 }
 
 scan:
   all_of:

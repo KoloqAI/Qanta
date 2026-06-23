@@ -31,18 +31,42 @@ def harness():
 
 class TestPBO:
     def test_pbo_on_noise_approx_half(self, harness):
-        """PBO on pure noise configs should be approx 0.5 (+-0.15)."""
+        """Multi-config CSCV on pure noise: no config has real edge, IS-best
+        is random → OOS rank ~uniform → PBO ≈ 0.5."""
         rng = np.random.default_rng(42)
-        noise_returns = rng.normal(0, 0.01, 500)
-        result = harness._pbo_cscv(noise_returns, n_blocks=6)
+        T, N = 500, 10
+        noise_matrix = rng.normal(0, 0.01, (T, N))
+        result = harness._pbo_cscv(noise_matrix, n_blocks=6)
+        assert result["pbo"] is not None
         assert 0.3 <= result["pbo"] <= 0.7, f"PBO on noise = {result['pbo']}, expected ~0.5"
 
     def test_pbo_on_seeded_edge_low(self, harness):
-        """PBO on returns with genuine persistent edge should be low."""
+        """One config has genuine persistent drift, rest are noise.
+        IS-best should consistently be the drifting config, which also
+        ranks high OOS → PBO → 0."""
         rng = np.random.default_rng(42)
-        edge_returns = rng.normal(0.002, 0.01, 500)  # persistent positive drift
-        result = harness._pbo_cscv(edge_returns, n_blocks=6)
-        assert result["pbo"] <= 0.5, f"PBO on seeded edge = {result['pbo']}, expected low"
+        T, N = 500, 10
+        noise_matrix = rng.normal(0, 0.01, (T, N))
+        # Config 0 gets genuine drift
+        noise_matrix[:, 0] += 0.003
+        result = harness._pbo_cscv(noise_matrix, n_blocks=6)
+        assert result["pbo"] is not None
+        assert result["pbo"] <= 0.3, f"PBO on seeded edge = {result['pbo']}, expected low"
+
+    def test_pbo_single_config_returns_none(self, harness):
+        """Single-config (N=1) → PBO undefined, returns None."""
+        rng = np.random.default_rng(42)
+        single = rng.normal(0, 0.01, (500, 1))
+        result = harness._pbo_cscv(single, n_blocks=6)
+        assert result["pbo"] is None
+        assert result["deg_slope"] is None
+
+    def test_pbo_1d_input_returns_none(self, harness):
+        """1-D array (old call convention) → PBO undefined, returns None."""
+        rng = np.random.default_rng(42)
+        flat = rng.normal(0, 0.01, 500)
+        result = harness._pbo_cscv(flat, n_blocks=6)
+        assert result["pbo"] is None
 
 
 class TestDSR:
@@ -105,6 +129,153 @@ class TestWalkForward:
             assert len(fold) > 0
 
 
+class TestPBOGateIntegration:
+    @pytest.mark.asyncio
+    async def test_overfit_sweep_rejected_by_pbo_gate(self, harness):
+        """A sweep over noise configs where the 'winner' is just IS-overfit:
+        PBO > threshold → gate rejects.  Proves PBO has teeth on the sweep path."""
+        from app.core.dsl.schema import StrategySpec, RiskEnvelope
+        from app.modules.data.providers import SampleDataProvider
+        from datetime import datetime
+
+        spec = StrategySpec(
+            id="overfit-test",
+            version=1,
+            tickers=["AAPL"],
+            thesis="PBO gate integration test",
+            regime={"all_of": [{"gt": ["sma(50)", "sma(200)"]}]},
+            entry={
+                "when": {"crosses_above": ["sma(20)", "sma(50)"]},
+                "action": "enter_long",
+                "sizing": {"fixed_pct": 5.0},
+            },
+            exits=[{"stop_loss": {"pct": 3.0}}],
+            risk=RiskEnvelope(max_position_pct=10.0, per_trade_stop_pct=3.0, max_gross_exposure=40.0),
+            universe={"primary": "AAPL"},
+            validation={"targets": [{"R": 0.02, "H": 7}]},
+        )
+
+        provider = SampleDataProvider()
+        bars = await provider.bars("AAPL", datetime(2018, 1, 1), datetime(2023, 1, 1))
+
+        # All-noise competing configs: no real edge, IS-best is pure luck
+        rng = np.random.default_rng(42)
+        T = len(bars) - 1
+        N = 10
+        competing = rng.normal(0, 0.01, (T, N))
+
+        report = await harness.validate(
+            spec, bars, n_eff=1, competing_returns=competing,
+        )
+
+        assert report.pbo is not None, "PBO should fire with multi-config matrix"
+        assert report.pbo > harness._pbo_threshold, (
+            f"PBO={report.pbo} should exceed threshold {harness._pbo_threshold} "
+            "for noise configs (selection-overfit)"
+        )
+        assert report.detail["gates"]["pbo"] is False, (
+            "PBO gate must reject when IS-best is noise-overfit"
+        )
+
+    @pytest.mark.asyncio
+    async def test_entry_param_overfit_rejected(self, harness):
+        """A strategy overfit on its tuned entry lookback (great on that
+        period, poor on neighbors) produces high PBO and is rejected.
+
+        Simulates the real failure mode: one lookback fits IS noise perfectly
+        but has no OOS advantage over its neighbors."""
+        from app.core.dsl.schema import StrategySpec, RiskEnvelope
+        from app.modules.data.providers import SampleDataProvider
+        from datetime import datetime
+
+        spec = StrategySpec(
+            id="entry-overfit",
+            version=1,
+            tickers=["AAPL"],
+            thesis="Entry param overfitting test",
+            regime={"all_of": [{"gt": ["sma(50)", "sma(200)"]}]},
+            entry={
+                "when": {"crosses_above": ["sma(20)", "sma(50)"]},
+                "action": "enter_long",
+                "sizing": {"fixed_pct": 5.0},
+            },
+            exits=[{"stop_loss": {"pct": 3.0}}],
+            risk=RiskEnvelope(max_position_pct=10.0, per_trade_stop_pct=3.0, max_gross_exposure=40.0),
+            universe={"primary": "AAPL"},
+            validation={"targets": [{"R": 0.02, "H": 7}]},
+        )
+
+        provider = SampleDataProvider()
+        bars = await provider.bars("AAPL", datetime(2018, 1, 1), datetime(2023, 1, 1))
+
+        rng = np.random.default_rng(42)
+        T = len(bars) - 1
+        N = 10  # 10 lookback variants
+        # Configs 1-9: consistent modest drift (robust neighbors)
+        matrix = rng.normal(0.0005, 0.01, (T, N))
+        # Config 0: great on first half (tuned to IS), poor on second half
+        matrix[:T // 2, 0] += 0.004
+        matrix[T // 2:, 0] -= 0.002
+
+        report = await harness.validate(
+            spec, bars, n_eff=1, competing_returns=matrix,
+        )
+
+        assert report.pbo is not None
+        assert report.pbo > harness._pbo_threshold, (
+            f"PBO={report.pbo} should catch entry-param overfitting "
+            f"(IS-tuned lookback, poor OOS neighbors)"
+        )
+        assert report.detail["gates"]["pbo"] is False
+
+    @pytest.mark.asyncio
+    async def test_robust_entry_param_passes(self, harness):
+        """A genuinely robust strategy (edge consistent across lookback
+        neighbors) passes the PBO gate."""
+        from app.core.dsl.schema import StrategySpec, RiskEnvelope
+        from app.modules.data.providers import SampleDataProvider
+        from datetime import datetime
+
+        spec = StrategySpec(
+            id="robust-entry",
+            version=1,
+            tickers=["AAPL"],
+            thesis="Robust entry param test",
+            regime={"all_of": [{"gt": ["sma(50)", "sma(200)"]}]},
+            entry={
+                "when": {"crosses_above": ["sma(20)", "sma(50)"]},
+                "action": "enter_long",
+                "sizing": {"fixed_pct": 5.0},
+            },
+            exits=[{"stop_loss": {"pct": 3.0}}],
+            risk=RiskEnvelope(max_position_pct=10.0, per_trade_stop_pct=3.0, max_gross_exposure=40.0),
+            universe={"primary": "AAPL"},
+            validation={"targets": [{"R": 0.02, "H": 7}]},
+        )
+
+        provider = SampleDataProvider()
+        bars = await provider.bars("AAPL", datetime(2018, 1, 1), datetime(2023, 1, 1))
+
+        rng = np.random.default_rng(42)
+        T = len(bars) - 1
+        N = 10
+        # Config 0 has genuine persistent edge; neighbors degrade gracefully
+        matrix = rng.normal(0, 0.01, (T, N))
+        for j in range(N):
+            matrix[:, j] += 0.003 * max(0.3, 1.0 - 0.08 * abs(j))
+
+        report = await harness.validate(
+            spec, bars, n_eff=1, competing_returns=matrix,
+        )
+
+        assert report.pbo is not None
+        assert report.pbo <= harness._pbo_threshold, (
+            f"PBO={report.pbo} should be low for robust strategy "
+            f"(edge consistent across lookback neighbors)"
+        )
+        assert report.detail["gates"]["pbo"] is True
+
+
 class TestEndToEnd:
     @pytest.mark.asyncio
     async def test_known_good_spec(self, harness):
@@ -135,8 +306,8 @@ class TestEndToEnd:
         report = await harness.validate(spec, bars, n_eff=1)
 
         assert isinstance(report.deflated_sharpe, float)
-        assert isinstance(report.pbo, float)
-        assert 0 <= report.pbo <= 1
+        # Single-config validation → PBO is None (undefined without competing configs)
+        assert report.pbo is None
         assert isinstance(report.passed, bool)
 
     @pytest.mark.asyncio

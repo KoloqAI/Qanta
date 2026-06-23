@@ -8,12 +8,12 @@ watches: [close, adx, atr, sma, avg_volume]
 regime:
   all_of:
     - { gt: ["avg_volume(20)", 500000] }
-    - { gt: ["adx(14)", 25] }
+    - { gt: ["adx({adx_period})", 25] }
 
 entry:
   when:
     all_of:
-      - { gt: ["adx(14)", 30] }
+      - { gt: ["adx({adx_period})", "{adx_threshold}"] }
       - { gt: ["close", "sma(20)"] }
   action: enter_long
   sizing:
@@ -22,7 +22,7 @@ entry:
 
 exits:
   - stop_loss:
-      atr_mult: 2.0
+      atr_mult: "{stop_atr}"
   - trailing_stop:
       atr_mult: 2.5
   - time_stop:
@@ -35,9 +35,9 @@ risk:
   max_gross_exposure: 40.0
 
 param_grid:
-  adx_period: { min: 10, max: 20, step: 2 }
-  adx_threshold: { min: 25, max: 40, step: 5 }
-  stop_atr: { min: 1.5, max: 3.0, step: 0.5 }
+  adx_period: { min: 10, max: 20, step: 2, default: 14 }
+  adx_threshold: { min: 25, max: 40, step: 5, default: 30 }
+  stop_atr: { min: 1.5, max: 3.0, step: 0.5, default: 2.0 }
 
 scan:
   all_of:

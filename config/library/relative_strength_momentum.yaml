@@ -13,8 +13,8 @@ regime:
 entry:
   when:
     all_of:
-      - { gt: ["close", "sma(20)"] }
-      - { gt: ["sma(20)", "sma(50)"] }
+      - { gt: ["close", "sma({fast_sma})"] }
+      - { gt: ["sma({fast_sma})", "sma({slow_sma})"] }
   action: enter_long
   sizing:
     vol_scaled:
@@ -22,7 +22,7 @@ entry:
 
 exits:
   - stop_loss:
-      atr_mult: 2.0
+      atr_mult: "{stop_atr}"
   - trailing_stop:
       atr_mult: 2.5
   - time_stop:
@@ -35,9 +35,9 @@ risk:
   max_gross_exposure: 40.0
 
 param_grid:
-  fast_sma: { min: 10, max: 30, step: 5 }
-  slow_sma: { min: 40, max: 80, step: 10 }
-  stop_atr: { min: 1.5, max: 3.0, step: 0.5 }
+  fast_sma: { min: 10, max: 30, step: 5, default: 20 }
+  slow_sma: { min: 40, max: 80, step: 10, default: 50 }
+  stop_atr: { min: 1.5, max: 3.0, step: 0.5, default: 2.0 }
 
 scan:
   all_of:
