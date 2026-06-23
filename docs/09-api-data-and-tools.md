@@ -14,7 +14,8 @@ Strategies & research
   GET    /strategies                      # registry list (filter by state/family/ticker)
   GET    /strategies/{id}                 # detail (versions, validation report, deployments)
   POST   /strategies/{id}/validate        # run the gauntlet -> job_id
-  POST   /strategies/{id}/approve         # body: {approved, reason}; creates Approval (risk_increasing)
+  POST   /strategies/{id}/approve         # body: {approved: bool, reason: str}; creates Approval (risk_increasing).
+                                         # Rejection reuses this endpoint with approved:false — there is no /reject route.
 Deployments
   POST   /deployments                     # body: {strategy_version_id, mode, guardrails}; live needs Approval (risk_increasing)
   GET    /deployments                     # active + historical

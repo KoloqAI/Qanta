@@ -12,6 +12,7 @@ router = APIRouter()
 
 
 class ApproveBody(BaseModel):
+    approved: bool = True
     reason: str = ""
 
 
@@ -39,6 +40,20 @@ async def get_strategy(strategy_id: str, db: DB, user: CurrentUser) -> dict:
     spec = strategy.get("spec", {})
     validation = state.validation_reports.get(strategy_id, {})
 
+    # Find active deployment for this strategy (if any)
+    active_deployment = None
+    for dep in state.deployments.values():
+        if dep.get("strategy_version_id") == strategy_id and dep.get("status") in (
+            "active", "paused",
+        ):
+            active_deployment = {
+                "id": dep["id"],
+                "mode": dep.get("mode", "paper"),
+                "status": dep.get("status", "active"),
+                "capital_budget": dep.get("capital_budget"),
+            }
+            break
+
     return {
         "id": strategy["id"],
         "name": strategy.get("name", "Untitled"),
@@ -58,6 +73,7 @@ async def get_strategy(strategy_id: str, db: DB, user: CurrentUser) -> dict:
         "red_team": validation.get("red_team", []),
         "regime_description": spec.get("regime", {}),
         "spec": spec,
+        "deployment": active_deployment,
     }
 
 
@@ -132,44 +148,74 @@ async def validate_strategy(strategy_id: str, db: DB, user: CurrentUser) -> dict
 async def approve_strategy(
     strategy_id: str, body: ApproveBody, db: DB, user: CurrentUser
 ) -> dict:
-    """Approve a strategy. This is risk_increasing -- requires a passing
-    validation report before the strategy can be approved."""
+    """Approve or reject a strategy.  Body: {approved: bool, reason: str}.
+    Rejection reuses this endpoint with approved=false (there is no /reject route).
+    Approval is risk_increasing and requires a passing validation report."""
     strategy = await state.registry.get(strategy_id)
     if not strategy:
         raise HTTPException(status_code=404, detail="Strategy not found")
 
-    # Must have passed validation
-    report = state.validation_reports.get(strategy_id, {})
-    if not report.get("passed"):
-        raise HTTPException(
-            status_code=400,
-            detail="Strategy must pass validation before approval. Run /validate first.",
-        )
-
     spec = strategy.get("spec", {})
     version = spec.get("version", 1)
 
-    # Update state
-    await state.registry.update_state(strategy_id, version, "approved")
-    strategy["status"] = "approved"
+    if body.approved:
+        report = state.validation_reports.get(strategy_id, {})
+        if not report.get("passed"):
+            raise HTTPException(
+                status_code=400,
+                detail="Strategy must pass validation before approval. Run /validate first.",
+            )
+
+        await state.registry.update_state(strategy_id, version, "approved")
+        strategy["status"] = "approved"
+
+        await state.audit_log.log(
+            actor="user",
+            action="strategy_approved",
+            subject_type="strategy",
+            subject_id=strategy_id,
+            payload={"approved": True, "reason": body.reason, "version": version},
+            user_id=user.get("id"),
+        )
+
+        await state.notifier.send(
+            event="strategy_approved",
+            severity="info",
+            payload={"strategy_id": strategy_id, "name": strategy.get("name")},
+        )
+
+        return {
+            "detail": "approved",
+            "strategy_id": strategy_id,
+            "version": version,
+            "reason": body.reason,
+        }
+
+    # Rejection path
+    await state.registry.update_state(strategy_id, version, "rejected")
+    strategy["status"] = "rejected"
 
     await state.audit_log.log(
         actor="user",
-        action="strategy_approved",
+        action="strategy_rejected",
         subject_type="strategy",
         subject_id=strategy_id,
-        payload={"reason": body.reason, "version": version},
+        payload={"approved": False, "reason": body.reason, "version": version},
         user_id=user.get("id"),
     )
 
     await state.notifier.send(
-        event="strategy_approved",
+        event="strategy_rejected",
         severity="info",
-        payload={"strategy_id": strategy_id, "name": strategy.get("name")},
+        payload={
+            "strategy_id": strategy_id,
+            "name": strategy.get("name"),
+            "reason": body.reason,
+        },
     )
 
     return {
-        "detail": "approved",
+        "detail": "rejected",
         "strategy_id": strategy_id,
         "version": version,
         "reason": body.reason,

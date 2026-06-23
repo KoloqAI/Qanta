@@ -1,7 +1,8 @@
-import { useQuery } from '@tanstack/react-query'
-import { apiFetch } from '../lib/api'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { apiFetch, apiMutate } from '../lib/api'
 import { useNavigate } from 'react-router-dom'
 import { useMemo, useState } from 'react'
+import { useToast } from '../hooks/useToast'
 
 /* ---------- Types ---------- */
 
@@ -27,13 +28,20 @@ interface LibraryArchetype {
 
 interface ArchetypeDetail extends LibraryArchetype {
   param_grid: Record<string, unknown>
-  scan_logic: string
+  scan: Record<string, unknown>
+  template: Record<string, unknown>
   exploration_funnel: {
-    scanned: number
-    passed_backtest: number
-    passed_validation: number
-    live: number
+    runs: number
+    total_trials: number
+    total_survivors: number
   }
+}
+
+interface ScanCandidate {
+  ticker: string
+  fit_score: number
+  archetype: string
+  family: string
 }
 
 type Tab = 'instantiated' | 'library'
@@ -57,6 +65,8 @@ function statusBadge(status: string) {
 
 export function RegistryPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
 
   /* Shared state */
   const [activeTab, setActiveTab] = useState<Tab>('instantiated')
@@ -68,6 +78,8 @@ export function RegistryPage() {
   const [familyFilter, setFamilyFilter] = useState('')
   const [horizonFilter, setHorizonFilter] = useState('')
   const [selectedArchetype, setSelectedArchetype] = useState<string | null>(null)
+  const [scanResults, setScanResults] = useState<ScanCandidate[] | null>(null)
+  const [exploreStatus, setExploreStatus] = useState<string | null>(null)
 
   /* ---- Queries ---- */
 
@@ -87,6 +99,67 @@ export function RegistryPage() {
     queryFn: () => apiFetch(`/api/library/${selectedArchetype}`),
     enabled: !!selectedArchetype,
   })
+
+  /* ---- Library Mutations ---- */
+
+  const scanMutation = useMutation<{ candidates: ScanCandidate[] }, Error, string>({
+    mutationFn: (archetypeId) => apiMutate(`/api/library/${archetypeId}/scan`, {}),
+    onSuccess: (res) => {
+      setScanResults(res.candidates)
+      toast(`Scan found ${res.candidates.length} candidate(s)`, 'success')
+    },
+    onError: (e) => toast(e.message, 'error'),
+  })
+
+  const exploreMutation = useMutation<{ job_id: string; status: string }, Error, string>({
+    mutationFn: (archetypeId) => apiMutate(`/api/library/${archetypeId}/explore`, { budget: 10 }),
+    onSuccess: (res) => {
+      setExploreStatus(res.status)
+      queryClient.invalidateQueries({ queryKey: ['library', selectedArchetype] })
+      toast(`Exploration ${res.status} — sweep queued`, 'success')
+    },
+    onError: (e) => toast(e.message, 'error'),
+  })
+
+  /* ---- Handlers ---- */
+
+  const handleScan = () => {
+    if (selectedArchetype) {
+      setScanResults(null)
+      scanMutation.mutate(selectedArchetype)
+    }
+  }
+
+  const handleExplore = () => {
+    if (selectedArchetype) {
+      setExploreStatus(null)
+      exploreMutation.mutate(selectedArchetype)
+    }
+  }
+
+  const handleAuthorFromThis = () => {
+    if (selectedArchetype && archetypeDetail) {
+      navigate('/assistant', {
+        state: {
+          seedArchetype: {
+            id: archetypeDetail.id,
+            name: archetypeDetail.name,
+            thesis: archetypeDetail.thesis,
+            family: archetypeDetail.family,
+            template: archetypeDetail.template,
+          },
+        },
+      })
+    }
+  }
+
+  const handleOpenInSandbox = () => {
+    if (selectedArchetype) {
+      navigate('/backtest', {
+        state: { preselectedArchetypeId: selectedArchetype },
+      })
+    }
+  }
 
   /* ---- Derived data ---- */
 
@@ -256,7 +329,11 @@ export function RegistryPage() {
                     {archetypes.map(a => (
                       <div
                         key={a.id}
-                        onClick={() => setSelectedArchetype(a.id)}
+                        onClick={() => {
+                          setSelectedArchetype(a.id)
+                          setScanResults(null)
+                          setExploreStatus(null)
+                        }}
                         className={`rounded-lg border cursor-pointer p-4 transition ${
                           selectedArchetype === a.id
                             ? 'border-indigo bg-indigo/5'
@@ -332,19 +409,18 @@ export function RegistryPage() {
                   <div>
                     <h3 className="text-xs text-muted mb-1">Scan Logic</h3>
                     <pre className="bg-inset rounded-lg p-3 text-xs font-mono text-ink overflow-x-auto whitespace-pre-wrap">
-                      {archetypeDetail.scan_logic}
+                      {JSON.stringify(archetypeDetail.scan, null, 2)}
                     </pre>
                   </div>
 
                   {/* Exploration funnel */}
                   <div>
                     <h3 className="text-xs text-muted mb-2">Exploration Funnel</h3>
-                    <div className="grid grid-cols-4 gap-3">
+                    <div className="grid grid-cols-3 gap-3">
                       {([
-                        ['Scanned', archetypeDetail.exploration_funnel.scanned],
-                        ['Passed Backtest', archetypeDetail.exploration_funnel.passed_backtest],
-                        ['Passed Validation', archetypeDetail.exploration_funnel.passed_validation],
-                        ['Live', archetypeDetail.exploration_funnel.live],
+                        ['Runs', archetypeDetail.exploration_funnel.runs],
+                        ['Total Trials', archetypeDetail.exploration_funnel.total_trials],
+                        ['Survivors', archetypeDetail.exploration_funnel.total_survivors],
                       ] as const).map(([label, count]) => (
                         <div key={label} className="bg-inset rounded-lg p-3 text-center">
                           <div className="text-lg font-mono text-ink">{count}</div>
@@ -354,21 +430,73 @@ export function RegistryPage() {
                     </div>
                   </div>
 
-                  {/* Actions */}
+                  {/* Actions — wired */}
                   <div className="flex gap-3 pt-2">
-                    <button className="px-4 py-2 rounded-lg bg-indigo text-white text-sm font-medium hover:bg-indigo/90 transition">
-                      Run scan
+                    <button
+                      onClick={handleScan}
+                      disabled={scanMutation.isPending}
+                      className="px-4 py-2 rounded-lg bg-indigo text-white text-sm font-medium hover:bg-indigo/90 transition disabled:opacity-50"
+                    >
+                      {scanMutation.isPending ? 'Scanning...' : 'Run scan'}
                     </button>
-                    <button className="px-4 py-2 rounded-lg border border-indigo text-indigo text-sm font-medium hover:bg-indigo/5 transition">
-                      Explore
+                    <button
+                      onClick={handleExplore}
+                      disabled={exploreMutation.isPending}
+                      className="px-4 py-2 rounded-lg border border-indigo text-indigo text-sm font-medium hover:bg-indigo/5 transition disabled:opacity-50"
+                    >
+                      {exploreMutation.isPending ? 'Queuing...' : 'Explore'}
                     </button>
-                    <button className="px-4 py-2 rounded-lg border border-hairline text-ink text-sm hover:bg-inset transition">
+                    <button
+                      onClick={handleAuthorFromThis}
+                      className="px-4 py-2 rounded-lg border border-hairline text-ink text-sm hover:bg-inset transition"
+                    >
                       Author from this
                     </button>
-                    <button className="px-4 py-2 rounded-lg border border-hairline text-ink text-sm hover:bg-inset transition">
+                    <button
+                      onClick={handleOpenInSandbox}
+                      className="px-4 py-2 rounded-lg border border-hairline text-ink text-sm hover:bg-inset transition"
+                    >
                       Open in Sandbox
                     </button>
                   </div>
+
+                  {/* Scan results */}
+                  {scanResults && (
+                    <div>
+                      <h3 className="text-xs text-muted mb-2">
+                        Scan Results ({scanResults.length} candidate{scanResults.length !== 1 ? 's' : ''})
+                      </h3>
+                      {scanResults.length === 0 ? (
+                        <p className="text-sm text-faint">No candidates matched the scan criteria</p>
+                      ) : (
+                        <div className="bg-inset rounded-lg overflow-hidden">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="text-muted border-b border-hairline">
+                                <th className="text-left px-3 py-1.5">Ticker</th>
+                                <th className="text-right px-3 py-1.5">Fit Score</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {scanResults.map(c => (
+                                <tr key={c.ticker} className="border-b border-hairline last:border-0">
+                                  <td className="px-3 py-1.5 font-mono text-ink">{c.ticker}</td>
+                                  <td className="px-3 py-1.5 text-right font-mono text-ink">{c.fit_score.toFixed(4)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Explore status */}
+                  {exploreStatus && (
+                    <div className="rounded-lg border border-indigo/30 bg-indigo/5 px-4 py-2.5 text-sm text-indigo">
+                      Exploration sweep {exploreStatus}. Trials will appear in the funnel above as they complete.
+                    </div>
+                  )}
                 </>
               )}
             </div>

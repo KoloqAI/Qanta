@@ -39,7 +39,7 @@ Sidebar groups → screens:
 
 **Assistant** — grounded chat; renders real app data inline; tool-call activity chips; read + risk-reducing actions execute; risk-increasing actions show a stage-and-confirm card; composer. Full-screen + slide-over. (See wireframe.)
 
-**Strategy Detail (shared hub)** — header (name, version, state chip, ticker) + section switch (Overview/Validation/Live). Review state: evidence panel (equity curve, confidence-vs-target, metric pass-chips, peer test, thesis) beside counter-evidence panel (red-team, worst-case Monte Carlo, skew/regime notes); decision bar (reason field + Reject + Approve; Approve opens Deploy Config). Live state: live P&L vs expected, positions, order log, guardrail health. (See wireframe for review state.)
+**Strategy Detail (shared hub)** — header (name, version, state chip, ticker) + section switch (Overview/Validation/Live). Review state: evidence panel (equity curve, confidence-vs-target, metric pass-chips, peer test, thesis) beside counter-evidence panel (red-team, worst-case Monte Carlo, skew/regime notes); decision bar (reason field + Reject + Approve; Approve opens Deploy Config). Live state: live P&L vs expected, positions, order log, guardrail health. (See wireframe for review state.) Action bar is state-driven: draft/backtested → Run Validation; validated → Approve & Deploy / Reject (Reject reuses the approve endpoint with approved:false); approved → Deploy Config modal; paper → Promote to Live / Pause / Flatten / Retire; live → Pause / Flatten / Retire. Approve, Deploy, and Promote are risk_increasing (confirm step); Pause/Flatten/Retire are risk_reducing.
 
 **Review Queue** — list of validated-pending strategies (sidebar badge count); row → Strategy Detail review state.
 

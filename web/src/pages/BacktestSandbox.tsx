@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
+import { useLocation } from 'react-router-dom'
 import { apiFetch, apiMutate } from '../lib/api'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
@@ -44,9 +45,12 @@ interface BacktestResult {
 }
 
 export function BacktestSandboxPage() {
-  const [source, setSource] = useState<SourceType>('dsl')
+  const location = useLocation()
+  const navState = location.state as { preselectedArchetypeId?: string } | null
+
+  const [source, setSource] = useState<SourceType>(navState?.preselectedArchetypeId ? 'archetype' : 'dsl')
   const [dslSpec, setDslSpec] = useState('')
-  const [archetypeId, setArchetypeId] = useState('')
+  const [archetypeId, setArchetypeId] = useState(navState?.preselectedArchetypeId ?? '')
   const [strategyId, setStrategyId] = useState('')
   const [tickers, setTickers] = useState('')
   const [startDate, setStartDate] = useState('')

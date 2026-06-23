@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { apiFetch, apiMutate } from '../lib/api'
 
 interface ToolCall {
@@ -23,14 +24,26 @@ interface Message {
 }
 
 export function AssistantPage() {
+  const location = useLocation()
+  const navState = location.state as { seedArchetype?: { id: string; name: string; thesis: string; family: string } } | null
+
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [seeded, setSeeded] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  useEffect(() => {
+    if (navState?.seedArchetype && !seeded) {
+      setSeeded(true)
+      const a = navState.seedArchetype
+      setInput(`Author a strategy from the "${a.name}" archetype (${a.family}). Thesis: ${a.thesis}`)
+    }
+  }, [navState, seeded])
 
   const send = async () => {
     if (!input.trim() || loading) return
