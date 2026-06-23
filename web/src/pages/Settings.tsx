@@ -182,7 +182,10 @@ export function SettingsPage() {
 
   const { data: workflows } = useQuery<unknown[]>({
     queryKey: ['settings', 'workflows'],
-    queryFn: () => apiFetch('/api/settings/workflows'),
+    queryFn: async () => {
+      const d = await apiFetch('/api/settings/workflows')
+      return d.workflows ?? []
+    },
     enabled: tab === 'workflows',
   })
 

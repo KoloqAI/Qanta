@@ -62,7 +62,7 @@ Assistant stage-and-confirm. Capital-budget allocation set in Deploy Config; Not
 **Gate:** propose → validate → review → approve → paper-trade → monitor works end to end; a capital budget is
 assigned at deploy; a critical event (e.g. kill-switch) fires an out-of-band notification; assistant executes a
 read + a risk-reducing action and STAGES a risk-increasing one (confirm required); audit log captures all of it.
-**Status:** Done. All 9 pages, theme system, button handlers wired, API routes use real services. 4 E2E tests pass.
+**Status:** Done. All 9 pages, theme system, button handlers wired, API routes use real services. 4 E2E tests pass. Fixed: Settings → Workflows tab crash (`workflows queryFn` was forwarding the raw wrapped response object instead of extracting `d.workflows`; all settings queryFns must unwrap their response — see doc 09 response shape reference).
 
 ## M8 — Evolution loop ✅
 Scheduled T1 promote/retire, T2 budgeted discover (ledger-fed deflation), T3 capability proposals;

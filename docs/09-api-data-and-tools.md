@@ -42,6 +42,19 @@ Settings
   GET/PUT /settings/connections /settings/models /settings/risk
           /settings/validation /settings/tools /settings/workflows /settings/portfolio
           /settings/notifications /settings/account /settings/appearance   # appearance: {theme: system|light|dark}
+
+  All settings GET endpoints return **wrapped objects**, not bare arrays. The frontend `queryFn`
+  for each tab is responsible for unwrapping. Shape reference:
+    /settings/connections  → {broker, data, redis, database}
+    /settings/models       → {tiers: {local|mid|frontier: {primary, fallback}}}
+    /settings/risk         → {guardrails: {...caps...}, kill_switch_active: bool}
+    /settings/validation   → {thresholds: {deflated_sharpe_min, pbo_max, min_trades, ...}}
+    /settings/tools        → {tools: [{name, description, permission, cost_tier}]}
+    /settings/workflows    → {workflows: []}
+    /settings/portfolio    → {allocation: {method, cash_buffer_pct, max_strategies}, caps: {...}}
+    /settings/notifications→ {channels: [{type, enabled}], severity_routing, quiet_hours}
+    /settings/appearance   → {theme: "system"|"light"|"dark"}
+  Do NOT pass the raw apiFetch promise as queryFn — always extract the payload in an async wrapper.
 WS
   /ws/jobs/{id}   /ws/monitor   /ws/assistant
 ```
