@@ -18,7 +18,7 @@
 set -euo pipefail
 
 COMPOSE="docker compose"
-PROJECT_NAME="quanta"
+PROJECT_NAME="qanta"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
