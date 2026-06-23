@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     # Auth
     secret_key: str = "change-me-to-a-random-secret"
     session_expire_minutes: int = 1440
+    # Bootstrap owner account — seeded once on first startup if set and no user exists
+    owner_email: str = ""
+    owner_password: str = ""
 
     # LLM (never in execution path)
     ollama_base_url: str = "http://localhost:11434"

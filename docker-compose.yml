@@ -9,6 +9,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://quanta:quanta@postgres:5432/quanta
+      DATABASE_URL_SYNC: postgresql://quanta:quanta@postgres:5432/quanta
       REDIS_URL: redis://redis:6379/0
       OLLAMA_BASE_URL: http://ollama:11434
     volumes:
@@ -29,6 +30,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://quanta:quanta@postgres:5432/quanta
+      DATABASE_URL_SYNC: postgresql://quanta:quanta@postgres:5432/quanta
       REDIS_URL: redis://redis:6379/0
       OLLAMA_BASE_URL: http://ollama:11434
     volumes:

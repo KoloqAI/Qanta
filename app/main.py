@@ -15,8 +15,24 @@ from app.config import settings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    from app.deps import async_session_factory
+    from app.modules.auth.service import AuthServiceImpl
     from app.modules.registry.library_loader import load_archetypes
     from app.api.library import register_archetypes
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    if settings.owner_email and settings.owner_password:
+        async with async_session_factory() as db:
+            auth = AuthServiceImpl(db, settings.session_expire_minutes)
+            count = await auth.user_count()
+            if count == 0:
+                try:
+                    await auth.register(settings.owner_email, settings.owner_password)
+                    logger.info("Owner account seeded: %s", settings.owner_email)
+                except Exception as exc:
+                    logger.error("Failed to seed owner account: %s", exc)
 
     archetypes = load_archetypes(validate=True)
     register_archetypes(archetypes)

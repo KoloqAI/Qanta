@@ -123,7 +123,7 @@ Relationships: strategy 1..* version; version 1..1 validation_report, 1..* backt
 deployment 1..* order; order 1..* fill; research_run 1..* version, 1..* trial; user 1..* approval.
 
 ## Deployment & scaling
-- Local: `docker compose up` → api, worker, web, postgres, redis, ollama.
+- Local: `docker compose up` → api, worker, web, postgres, redis, ollama. Then run `docker compose exec api alembic upgrade head` on first setup to apply migrations. Set `OWNER_EMAIL` + `OWNER_PASSWORD` in `.env` before first start to seed the owner account automatically. `DATABASE_URL_SYNC` must be set alongside `DATABASE_URL` in the compose environment (sync URL is required by Alembic; use the `postgres` service hostname, not `localhost`, inside containers).
 - AWS: ALB → ECS/Fargate (api, web, workers) · RDS Postgres (+ TimescaleDB only when volume needs it) · ElastiCache Redis · Secrets Manager · SES · IB Gateway/IBeam · LLM via Ollama-on-EC2 or hosted. Terraform-provisioned.
 - Stateless services; horizontal scale on the worker tier; execution module extractable to its own service (and its own secret scope) when isolation is wanted.
 - Indicative cost: $0–100/mo local (free data + paper); ~$100–250/mo small AWS.

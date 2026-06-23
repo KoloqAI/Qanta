@@ -13,7 +13,7 @@ DI, Alembic schema (doc 02 data model), CI running `pytest`, and stubbed typed i
 Users, argon2/passkey, server-side sessions (httpOnly+CSRF), `current_user` dependency, Login screen,
 Account settings. Secrets vault wiring (broker/LLM keys never reach client/agent scope).
 **Gate:** login works; mutating routes 401 without a session; secrets resolve from the vault; no secret appears in any client response (test asserts).
-**Status:** Done. Argon2, server-side sessions, CSRF, current_user dep, Login screen.
+**Status:** Done. Argon2, server-side sessions, CSRF, current_user dep, Login screen. Bootstrap owner seeding via `OWNER_EMAIL`/`OWNER_PASSWORD` (lifespan, idempotent). `GET /auth/setup-status` routes frontend to Login vs Create Account. All SQLAlchemy `Enum()` columns fixed with `values_callable` to use lowercase DB values.
 
 ## M2 — Data + Backtest ✅
 **Prerequisite:** confirm the historical data source delivers survivorship-free, point-in-time data incl. delisted names (vendor — Norgate / Polygon / Databento; see doc 12) before relying on it for the harness.

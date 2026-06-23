@@ -32,6 +32,22 @@ Every assistant action — read, executed, or staged — is written to the audit
 - Secrets: broker credentials and LLM provider keys live in a vault (AWS Secrets Manager; local dev `.env`). Broker creds are injected ONLY into the execution service scope — never the research agent, never the client. LLM keys never reach the browser.
 - Account screen (under Settings): manage credentials/sessions, connected broker & data accounts, and LLM provider keys.
 
+### First-run bootstrap
+The public `GET /auth/setup-status` endpoint returns `{"configured": bool}` (true when at least one user exists).
+The frontend uses this to route: `configured: false` → Create Account screen (first-run setup); `configured: true` → Login screen.
+
+To seed the owner account automatically on first startup, set `OWNER_EMAIL` and `OWNER_PASSWORD` in `.env`.
+The app lifespan checks `user_count() == 0` on startup and registers the owner if both values are provided. Subsequent restarts skip this (idempotent). Registration via the `/auth/register` endpoint is blocked once any user exists (single-user enforcement).
+
+```
+# .env — bootstrap owner account
+OWNER_EMAIL=owner@example.com
+OWNER_PASSWORD=<strong-password>
+```
+
+### Enum mapping note
+SQLAlchemy's `Enum(PythonEnum)` uses enum **names** (uppercase) as DB values by default. All PostgreSQL enum types in this schema are created with lowercase values (`"user"`, `"paper"`, `"seed"`, etc.). All `Enum()` column definitions therefore carry `values_callable=lambda objs: [e.value for e in objs]` to align the ORM with the DB type. Any new enum column must follow the same pattern.
+
 ## Audit & observability
 Immutable `audit_log` for every signal, order, fill, rejection, approval, kill-switch event, assistant
 action, and evolution change. Calibration data (confidence vs realized) captured for the Performance screen.

@@ -131,7 +131,10 @@ class Deployment(TimestampMixin, Base):
     __tablename__ = "deployments"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     strategy_version_id: Mapped[str] = mapped_column(ForeignKey("strategy_versions.id"), nullable=False)
-    mode: Mapped[DeploymentMode] = mapped_column(Enum(DeploymentMode), nullable=False)
+    mode: Mapped[DeploymentMode] = mapped_column(
+        Enum(DeploymentMode, values_callable=lambda objs: [e.value for e in objs]),
+        nullable=False,
+    )
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending")
     guardrails: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     capital_budget: Mapped[float | None] = mapped_column(Float)
@@ -180,7 +183,10 @@ class AuditLogEntry(Base):
     __tablename__ = "audit_log"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
-    actor: Mapped[ActorType] = mapped_column(Enum(ActorType), nullable=False)
+    actor: Mapped[ActorType] = mapped_column(
+        Enum(ActorType, values_callable=lambda objs: [e.value for e in objs]),
+        nullable=False,
+    )
     action: Mapped[str] = mapped_column(String(100), nullable=False)
     subject_type: Mapped[str] = mapped_column(String(100), nullable=False)
     subject_id: Mapped[str] = mapped_column(String(36), nullable=False)
@@ -236,7 +242,9 @@ class LibraryArchetype(Base):
     scan: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     param_grid: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     source: Mapped[ArchetypeSource] = mapped_column(
-        Enum(ArchetypeSource), nullable=False, server_default="seed"
+        Enum(ArchetypeSource, values_callable=lambda objs: [e.value for e in objs]),
+        nullable=False,
+        server_default="seed",
     )
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="unexplored")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
