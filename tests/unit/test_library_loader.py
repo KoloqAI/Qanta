@@ -218,3 +218,33 @@ class TestParamBindings:
                 assert isinstance(threshold_val, int), (
                     f"Whole float not coerced to int: {threshold_val!r}"
                 )
+
+    def test_fractional_params_never_truncated(self):
+        """Fractional stop multiplier 0.8 must survive binding, never become 0."""
+        from app.modules.registry.library_loader import _coerce_numeric
+        # Direct unit check on _coerce_numeric
+        assert _coerce_numeric(0.8) == 0.8
+        assert isinstance(_coerce_numeric(0.8), float)
+        assert _coerce_numeric(14.0) == 14
+        assert isinstance(_coerce_numeric(14.0), int)
+        assert _coerce_numeric(7) == 7
+        assert isinstance(_coerce_numeric(7), int)
+
+        # End-to-end through _fill_placeholders
+        template = {
+            "exits": [{"stop_loss": {"atr_mult": "{stop_atr}"}},
+                      {"take_profit": {"atr_mult": "{tp_atr}"}}],
+        }
+        filled = _fill_placeholders(template, {"stop_atr": 0.8, "tp_atr": 1.5})
+        assert filled["exits"][0]["stop_loss"]["atr_mult"] == 0.8
+        assert isinstance(filled["exits"][0]["stop_loss"]["atr_mult"], float)
+        assert filled["exits"][1]["take_profit"]["atr_mult"] == 1.5
+        assert isinstance(filled["exits"][1]["take_profit"]["atr_mult"], float)
+
+        # Verify via resolve_grid_values → _fill_placeholders round-trip
+        grid_vals = resolve_grid_values({"min": 0.5, "max": 1.0, "step": 0.1})
+        for v in grid_vals:
+            coerced = _coerce_numeric(v)
+            if not v.is_integer():
+                assert isinstance(coerced, float), f"{v} was truncated to {coerced!r}"
+                assert abs(coerced - v) < 1e-9, f"{v} was changed to {coerced}"

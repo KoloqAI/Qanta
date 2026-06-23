@@ -24,6 +24,7 @@ interface LibraryArchetype {
   thesis: string
   status: string
   source: string
+  exclusion_reason?: string
 }
 
 interface ArchetypeDetail extends LibraryArchetype {
@@ -53,6 +54,7 @@ function statusBadge(status: string) {
     status === 'has-live'      ? 'bg-gain/20 text-gain font-medium' :
     status === 'has-survivors' ? 'bg-gain/10 text-gain' :
     status === 'explored'      ? 'bg-indigo/10 text-indigo' :
+    status === 'excluded'      ? 'bg-loss/10 text-loss' :
                                  'bg-surface text-muted'
   return (
     <span className={`text-xs px-1.5 py-0.5 rounded ${cls}`}>
@@ -348,6 +350,11 @@ export function RegistryPage() {
                           {statusBadge(a.status)}
                         </div>
                         <p className="text-muted text-xs truncate">{a.thesis}</p>
+                        {a.status === 'excluded' && a.exclusion_reason && (
+                          <p className="text-loss text-xs mt-1 truncate" title={a.exclusion_reason}>
+                            {a.exclusion_reason}
+                          </p>
+                        )}
                         <div className="mt-2">
                           <span className="text-xs px-1.5 py-0.5 rounded bg-inset text-faint">
                             {a.horizon}
@@ -382,6 +389,17 @@ export function RegistryPage() {
                       {archetypeDetail.horizon}
                     </span>
                   </div>
+
+                  {/* Exclusion warning */}
+                  {archetypeDetail.status === 'excluded' && (
+                    <div className="rounded-lg border border-loss/30 bg-loss/5 p-3 flex items-start gap-2">
+                      <span className="text-loss mt-0.5">&#9888;</span>
+                      <div>
+                        <p className="text-sm text-loss font-medium">Excluded from exploration</p>
+                        <p className="text-xs text-muted">{archetypeDetail.exclusion_reason ?? 'Unknown reason'}</p>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Thesis */}
                   <div>

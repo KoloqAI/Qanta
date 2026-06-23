@@ -13,7 +13,7 @@ cycle is — set it high, but the ledger keeps deflation honest. Archetypes neve
 
 ## 1. Strategy Library (the seed knowledge)
 A curated, versioned catalog of strategy archetypes, each a DSL template (doc 07) plus a scan playbook.
-Seeds live as YAML in `config/library/*.yaml`, loaded into a `library_archetypes` table on init; editable;
+Seeds live as YAML in `config/library/*.yaml`, loaded in-memory on startup (DB-backed table planned); editable;
 the evolution loop appends *proven, human-approved* discoveries (Tier-3) back into the library.
 
 ### Library entry schema
@@ -128,7 +128,9 @@ Registry gains two tabs: **Instantiated** (today's registry: all strategies acro
 **Library** (the archetype catalog).
 - **Library view:** archetype cards grouped by family/theme; filter by family + horizon. Each card shows
   name, thesis (one line), watched features, horizon, and status: `unexplored` / `explored` /
-  `has-survivors (n)` / `has-live`. Surfaces the universe of themes at a glance.
+  `has-survivors (n)` / `has-live` / `excluded` (with `exclusion_reason`). An `excluded` archetype
+  failed load-time param binding validation — it won't appear in sweeps until the YAML is fixed.
+  Surfaces the universe of themes at a glance.
 - **Archetype detail:** full thesis, watched features, the scan logic (human-readable), the param grid, and
   the exploration funnel for it (trials → backtested → validated → survivors, pulled from the ledger).
   Actions: **Run scan** (surface candidate tickers now), **Explore** (queue the aggressive sweep for this
@@ -157,6 +159,10 @@ POST   /backtest                     # body {source: spec|{archetype_id,params}|
 ```
 
 ## Data model additions (doc 09)
+**Planned — not yet implemented.** Currently archetypes are loaded in-memory from
+`config/library/*.yaml` on every startup (templates now use `{param}` placeholders + `default:`
+values). When the DB-backed tables below land, add a re-seed migration to populate them from the
+current YAML format.
 ```
 library_archetypes(id pk, name, family, horizon, thesis, template jsonb, scan jsonb,
                    param_grid jsonb, source enum(seed,evolved), status, created_at)

@@ -34,14 +34,17 @@ _PLACEHOLDER_RE = re.compile(r"\{(\w+)\}")
 
 def _fmt_num(v: float | int) -> str:
     """Format numeric for string embedding. 14.0 → '14', 1.2 → '1.2'."""
-    if isinstance(v, float) and v == int(v):
+    if isinstance(v, float) and v.is_integer():
         return str(int(v))
     return str(v)
 
 
 def _coerce_numeric(v: float | int) -> float | int:
-    """Coerce whole floats to int: 14.0 → 14, 1.2 → 1.2."""
-    if isinstance(v, float) and v == int(v):
+    """Coerce whole floats to int: 14.0 → 14, 1.2 → 1.2.
+
+    Uses ``float.is_integer()`` — never truncates a fractional value.
+    """
+    if isinstance(v, float) and v.is_integer():
         return int(v)
     return v
 

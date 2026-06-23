@@ -34,5 +34,5 @@ def app(test_engine):
 @pytest.fixture
 async def client(app):
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with AsyncClient(transport=transport, base_url="https://testserver") as ac:
         yield ac

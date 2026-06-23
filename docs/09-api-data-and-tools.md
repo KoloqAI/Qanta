@@ -88,6 +88,9 @@ search_ledger(id pk, spec_hash, hypothesis_family, data_window jsonb, model_vers
 calibration(id pk, validation_report_id fk, claimed_c float, target_r float, horizon int,
             realized_outcome bool, resolved_at)           # confidence calibration
 evolution_runs(id pk, tier int, summary jsonb, meta_lockbox_result jsonb, ts)
+-- PLANNED (not yet implemented): currently loaded in-memory from config/library/*.yaml on startup.
+-- When this table lands, add a re-seed / template-format migration to populate it from the
+-- current YAML files (which now use {param} placeholders + default: values).
 library_archetypes(id pk, name, family, horizon, thesis, template jsonb, scan jsonb,
                    param_grid jsonb, source enum(seed,evolved), status, created_at)
 exploration_runs(id pk, archetype_id fk, budget_spent, trials int, survivors int, ts)

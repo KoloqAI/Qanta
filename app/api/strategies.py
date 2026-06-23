@@ -40,6 +40,14 @@ async def get_strategy(strategy_id: str, db: DB, user: CurrentUser) -> dict:
     spec = strategy.get("spec", {})
     validation = state.validation_reports.get(strategy_id, {})
 
+    from app.modules.validation.service import GATES_VERSION
+    report_gv = validation.get("gates_version", 0) if validation else 0
+    validation_stale = bool(validation) and report_gv < GATES_VERSION
+    stale_reason = (
+        f"This report predates the current gate set (v{report_gv} < v{GATES_VERSION}). "
+        "Re-validate to approve."
+    ) if validation_stale else None
+
     # Find active deployment for this strategy (if any)
     active_deployment = None
     for dep in state.deployments.values():
@@ -74,6 +82,8 @@ async def get_strategy(strategy_id: str, db: DB, user: CurrentUser) -> dict:
         "regime_description": spec.get("regime", {}),
         "spec": spec,
         "deployment": active_deployment,
+        "validation_stale": validation_stale,
+        "stale_reason": stale_reason,
     }
 
 

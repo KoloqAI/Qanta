@@ -36,6 +36,8 @@ interface StrategyData {
   red_team: string[]
   regime_description: string
   deployment: DeploymentInfo | null
+  validation_stale: boolean
+  stale_reason: string | null
 }
 
 /* ---------- Component ---------- */
@@ -192,7 +194,7 @@ export function StrategyDetailPage() {
     id: '', name: 'Strategy', ticker: '', version: 1, state: 'draft', thesis: '', confidence: 0,
     confidence_lo: 0, confidence_hi: 0, sharpe: 0, pbo: 0, dsr: 0, max_dd: 0, n_trades: 0,
     win_rate: 0, net_edge: 0, equity_curve: [], red_team: [], regime_description: '',
-    deployment: null,
+    deployment: null, validation_stale: false, stale_reason: null,
   }
 
   const dep = s.deployment
@@ -353,8 +355,26 @@ export function StrategyDetailPage() {
           </button>
         )}
 
-        {/* validated → Approve + Reject */}
-        {s.state === 'validated' && (
+        {/* validated → Approve + Reject (or re-validate if stale) */}
+        {s.state === 'validated' && s.validation_stale && (
+          <div className="space-y-3">
+            <div className="rounded-lg border border-loss/30 bg-loss/5 p-3 flex items-start gap-2">
+              <span className="text-loss mt-0.5">&#9888;</span>
+              <div>
+                <p className="text-sm text-loss font-medium">Stale validation report</p>
+                <p className="text-sm text-muted">{s.stale_reason}</p>
+              </div>
+            </div>
+            <button
+              onClick={handleValidate}
+              disabled={validateMutation.isPending}
+              className={`${btnPrimary} bg-indigo text-white hover:bg-indigo/90`}
+            >
+              {validateMutation.isPending ? 'Running gauntlet...' : 'Re-validate'}
+            </button>
+          </div>
+        )}
+        {s.state === 'validated' && !s.validation_stale && (
           <div className="space-y-3">
             <textarea
               value={reason}

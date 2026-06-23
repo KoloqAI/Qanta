@@ -216,6 +216,37 @@ def test_collapse_to_single_distinct():
     assert len(variants) == 1
 
 
+def test_base_spec_counted_exactly_once():
+    """All-defaults combo is in the grid but base appears exactly once in variants."""
+    template = {
+        "entry": {"when": {"all_of": [{"lt": ["rsi({period})", "{threshold}"]}]},
+                  "action": "enter_long", "sizing": {"fixed_pct": 5.0}},
+        "exits": [{"stop_loss": {"atr_mult": "{stop_atr}"}}],
+    }
+    grid = {
+        "period": {"min": 12, "max": 16, "step": 2, "default": 14},
+        "threshold": {"min": 23, "max": 27, "step": 2, "default": 25},
+        "stop_atr": {"min": 1.0, "max": 1.4, "step": 0.2, "default": 1.2},
+    }
+    # defaults (14, 25, 1.2) IS in the product (12,14,16)×(23,25,27)×(1.0,1.2,1.4)
+    variants = EvolutionLoopImpl._generate_param_grid(
+        template, n_variants=50, archetype_grid=grid,
+    )
+    # base is variant 0
+    base_key = json.dumps(variants[0], sort_keys=True, default=str)
+    # count how many times the base spec appears
+    base_count = sum(
+        1 for v in variants
+        if json.dumps(v, sort_keys=True, default=str) == base_key
+    )
+    assert base_count == 1, f"Base spec appears {base_count} times, expected exactly 1"
+    # All variants are unique
+    all_keys = [json.dumps(v, sort_keys=True, default=str) for v in variants]
+    assert len(all_keys) == len(set(all_keys)), "Duplicate variant found"
+    # 3×3×3=27 total combos, minus 1 for base already counted = 26 distinct + 1 base = 27
+    assert len(variants) == 27
+
+
 def test_fallback_single_variant_returns_one():
     """Non-archetype spec with no stop_loss returns a single-element list."""
     spec = {
