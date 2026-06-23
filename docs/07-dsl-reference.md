@@ -67,7 +67,7 @@ global limits in `config/guardrails.yaml`; a looser value is rejected.
     {"gt": ["avg_volume(20)", 2000000]}
   ]},
   "entry": {"when": {"lt": ["close", {"expr": "rolling_low(20) + 0.4*atr(14)"}]},
-            "action": "enter_long", "sizing": {"fixed_pct": 5.0}},
+            "action": "enter_long", "sizing": {"fixed_pct": {"pct": 5.0}}},
   "exits": [
     {"stop_loss": {"atr_mult": 0.8, "ref": "rolling_low(20)"}},
     {"take_profit": {"ref": "range_detect(20).mid"}},

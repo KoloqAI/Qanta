@@ -77,14 +77,20 @@ Config params: `scan_universe_cap`, `polygon_calls_per_minute`, `scan_bar_lookba
 
 ### Aggressive exploration workflow (seeded T2; deterministic pipeline, ledger-governed)
 ```
-for archetype in library (budget-ordered):
-    candidates = universe_scan(archetype.scan, as_of=now)        # surfaces what to look at
-    for ticker in candidates[:k]:
-        for params in grid(archetype.param_grid):                # the aggressive sweep
-            spec = instantiate(archetype, ticker, params)
-            bt   = backtest(spec); ledger.log(spec, family=archetype.family)   # every trial counted
-            if bt.passes_cheap_screen: report = validate(spec)   # full gauntlet (doc 08)
-    surface survivors where survivor_count > expected_false_discoveries(α, n_eff(family))
+for archetype in library (filtered by archetype_subset):
+    candidates = scan_universe(archetype, as_of)                 # surfaces what to look at
+    for ticker in candidates[:candidates_per_archetype]:
+        if budget_spent >= budget: break
+        bars = provider.bars(ticker, *recent_window(700))
+        variants = build_archetype_variants(template, param_grid, max_configs)
+        all_returns = [backtest(v, bars) for v in variants]      # sweep all param combos
+        winner = argmax(daily_sharpe(all_returns))                # IS-best by equity-curve Sharpe
+        competing_returns = dedup(column_stack(all_returns))      # T×N matrix for PBO
+        peers = [c.ticker for c in candidates if c != ticker][:5]
+        n_eff += 1                                                # one per ticker/archetype family
+        ledger.append({spec_hash, ticker, archetype_id, ...})    # every trial counted
+        report = validate(winner, bars, n_eff, competing_returns, peers)  # full gauntlet
+        if report.passed: register(winner) → survivors           # all 6 gates must pass
 ```
 - N_eff per family rises with the sweep → DSR `expected_max_sharpe` bar rises → harder to pass. By design.
 - Survivors go to the Review Queue with their deflated confidence; you approve; paper precedes live.
@@ -134,8 +140,8 @@ right column is a docked detail panel (mobile: full-width slide-over). Selection
   failed load-time param binding validation — it won't appear in sweeps until the YAML is fixed.
   Surfaces the universe of themes at a glance.
 - **Archetype detail (right panel):** full thesis, watched features, the scan logic (human-readable),
-  the param grid, and the exploration funnel for it (trials → backtested → validated → survivors, pulled
-  from the ledger). Actions: **Run scan** (surface candidate tickers now), **Explore** (queue the
+  the param grid, and the exploration funnel for it (trials_run → ledger entries → validation outcomes
+  → survivors, derived post-hoc from ledger rows). Actions: **Run scan** (surface candidate tickers now), **Explore** (queue the
   aggressive sweep for this archetype, budget-aware), **Author from this** (seed the research agent),
   **Open in Sandbox** (#3).
 - **Scan and Explore stream live job activity (AG-UI-style)** into the panel's bottom activity feed.

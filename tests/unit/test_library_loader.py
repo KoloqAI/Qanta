@@ -33,11 +33,15 @@ class TestLibraryLoader:
             assert a["param_grid"], f"{aid}: missing param_grid"
 
     def test_all_templates_pass_dsl_parser(self):
-        """Every archetype template must be a valid DSL spec."""
+        """Every archetype template (after placeholder fill) must be a valid DSL spec."""
         archetypes = load_archetypes(validate=False)
         all_errors = []
         for aid, a in archetypes.items():
-            errors = _validate_template(a["template"], aid)
+            template = a["template"]
+            if a["param_grid"]:
+                defaults = _extract_defaults(a["param_grid"])
+                template = _fill_placeholders(template, defaults)
+            errors = _validate_template(template, aid)
             all_errors.extend(errors)
         assert not all_errors, (
             f"{len(all_errors)} validation error(s):\n" + "\n".join(all_errors)
@@ -130,7 +134,7 @@ class TestParamBindings:
                 "watches": ["close"],
                 "regime": {"all_of": [{"gt": ["avg_volume(20)", 500000]}]},
                 "entry": {"when": {"all_of": [{"lt": ["rsi(14)", 30]}]},
-                          "action": "enter_long", "sizing": {"fixed_pct": 5.0}},
+                          "action": "enter_long", "sizing": {"fixed_pct": {"pct": 5.0}}},
                 "exits": [{"stop_loss": {"atr_mult": 1.0}}],
                 "risk": {"per_trade_stop_pct": 3.0, "max_position_pct": 5.0},
                 "param_grid": {"ghost_param": {"min": 1, "max": 5, "step": 1, "default": 3}},
@@ -168,7 +172,7 @@ class TestParamBindings:
                 "watches": ["close"],
                 "regime": {"all_of": [{"gt": ["avg_volume(20)", 500000]}]},
                 "entry": {"when": {"all_of": [{"lt": ["rsi({rsi_period})", 30]}]},
-                          "action": "enter_long", "sizing": {"fixed_pct": 5.0}},
+                          "action": "enter_long", "sizing": {"fixed_pct": {"pct": 5.0}}},
                 "exits": [{"stop_loss": {"atr_mult": 1.0}}],
                 "risk": {"per_trade_stop_pct": 3.0, "max_position_pct": 5.0},
                 "param_grid": {"rsi_period": {"min": 7, "max": 21, "step": 2}},

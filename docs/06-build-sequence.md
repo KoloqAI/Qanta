@@ -73,6 +73,9 @@ a T3 change requires human approval and a non-degrading meta-lockbox result; not
 Post-milestone fix: replaced naming-convention regex param substitution with explicit `{param}` placeholder
 binding. 12 no-op params across 9 archetypes were producing duplicate PBO columns; `gates_version` bumped to 3
 to invalidate stale reports. Load-time validation now excludes archetypes with unbound params.
+Positive control (jump-diffusion SeededEdgeProvider) validates full T2 pipeline — edge genuine (DSR=0.986,
+PBO=0.167, peer_hit=1.0) but min_trades=100 incompatible with daily-bar RSI swing on 2-year window (~35
+trades). Deploy-from-discovery exercised end-to-end. 39 tests pass, 0 gates relaxed.
 
 ## M9 — Hardening → optional live 🔜
 Real-time data plan, corporate-actions + LULD-halt handling, broker-protection re-arm on reconnect, Terraform/AWS deploy, observability, calibration tracking live, repeat safety drills.

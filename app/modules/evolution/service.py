@@ -417,11 +417,20 @@ class EvolutionLoopImpl:
                 run_ledger.append(ledger_entry)
                 self._ledger.append(ledger_entry)
 
+                # Derive peer tickers from scan candidates (excl. current ticker)
+                peer_tickers = [
+                    c["ticker"] for c in candidates
+                    if c["ticker"] != ticker
+                ][:5]
+
                 try:
                     report = await harness.validate(
                         winner_spec, bars,
                         n_eff=self._n_eff,
                         competing_returns=competing_returns,
+                        peer_tickers=peer_tickers if peer_tickers else None,
+                        provider=provider,
+                        as_of=as_of_dt,
                     )
                 except Exception:
                     ledger_entry["validation_passed"] = False

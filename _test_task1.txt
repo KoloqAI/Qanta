@@ -1,0 +1,13 @@
+...........................s............................................ [ 34%]
+..................F
+================================== FAILURES ===================================
+____________ TestLibraryLoader.test_all_templates_pass_dsl_parser _____________
+tests\unit\test_library_loader.py:42: in test_all_templates_pass_dsl_parser
+    assert not all_errors, (
+E   AssertionError: 1 validation error(s):
+E     [vol_scaled_exposure] entry.sizing: 'vol_scaled.target_vol' must be numeric, got str
+E   assert not ["[vol_scaled_exposure] entry.sizing: 'vol_scaled.target_vol' must be numeric, got str"]
+=========================== short test summary info ===========================
+FAILED tests/unit/test_library_loader.py::TestLibraryLoader::test_all_templates_pass_dsl_parser
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 89 passed, 1 skipped in 91.16s (0:01:31)

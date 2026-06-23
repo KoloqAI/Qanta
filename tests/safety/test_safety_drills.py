@@ -353,7 +353,7 @@ class TestLockbox:
             entry={
                 "when": {"crosses_above": ["sma(20)", "sma(50)"]},
                 "action": "enter_long",
-                "sizing": {"fixed_pct": 5.0},
+                "sizing": {"fixed_pct": {"pct": 5.0}},
             },
             exits=[{"stop_loss": {"pct": 3.0}}, {"take_profit": {"pct": 6.0}}],
             risk=RiskEnvelope(max_position_pct=10.0, per_trade_stop_pct=3.0, max_gross_exposure=40.0),

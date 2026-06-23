@@ -99,12 +99,19 @@ def confidence(spec, target_R, horizon_H, oos_windows, n_eff, base_rate_p0):
     return {C: post.mean(), C_lo: post.ppf(0.10), C_hi: post.ppf(0.90)}   # act on C_lo
 ```
 - Outcome = strategy net return over H with the stop active (first-passage aware).
-- Emission gates: only return a number if DSR ≥ 0.95, PBO ≤ 0.20, peer-hit ≥ 0.60 (config: `peer_hit_rate_min`),
-  and C_lo ≥ floor. Otherwise emit "Not validated: {gate}".
+- **Six validation gates** (GATES_VERSION = 3, all must pass):
+  1. `dsr` — DSR ≥ 0.95
+  2. `pbo` — PBO ≤ 0.20 (skipped when PBO is None, i.e. single-config)
+  3. `deg_slope` — degradation slope ≥ 0 (skipped when None)
+  4. `min_trades` — n_trades ≥ 100
+  5. `cost_edge` — net_edge ≥ 0.50 × frictionless_edge (skipped when frictionless_edge = 0)
+  6. `peer_hit` — peer_hit ≥ 0.60 (config: `peer_hit_rate_min`); **fails closed** when insufficient
 - Peer-hit gate: spec is backtested on the N most return-correlated tickers (point-in-time, `as_of` clamped).
-  peer_hit = fraction of peers with net_edge > 0. Peers auto-selected via correlation (per archetype `peers_hint`);
-  if insufficient peer data (< `min_peers`), gate fails closed. Peer backtests are part of the single validation
-  (counted in the search-budget ledger, not a separate multiple-testing backdoor).
+  peer_hit = fraction of peers with net_edge > 0. Peers auto-selected via correlation (per archetype `peers_hint`).
+  Gate fails closed (returns False) when: (a) peer_tickers is None/empty, (b) provider is unavailable,
+  or (c) fewer than `min_peers` (default 5) peers produce valid backtest results.
+  Peer backtests are part of the single validation (counted in the search-budget ledger, not a separate
+  multiple-testing backdoor).
   `gates_version` (currently 3) tracks gate-set evolution; reports predating it are stale and blocked from
   approval/deployment until re-validated. Version history: v2 = peer-hit gate added; v3 = explicit `{param}`
   placeholder binding (old naming-convention regex could produce no-op params and duplicate PBO columns).
@@ -122,12 +129,22 @@ def confidence(spec, target_R, horizon_H, oos_windows, n_eff, base_rate_p0):
 
 ## 6. Search-budget ledger & effective N
 ```
-ledger row: {spec_hash, hypothesis_family, data_window, model_version, result_metrics, ts}
-def n_eff(family):
-    specs = ledger.where(family)
-    clusters = cluster_by_return_correlation(specs, threshold=0.9)   # near-duplicate sweeps collapse
-    return len(clusters)                                              # effective independent trials
+ledger row: {
+  spec_hash,              # MD5 of the winner spec JSON
+  hypothesis_family,      # e.g. "mean_reversion"
+  archetype_id,           # e.g. "rsi_reversion"
+  ticker,                 # primary ticker evaluated
+  n_configs_swept,        # how many param-grid variants parsed + backtested
+  n_configs_distinct,     # distinct return-vector columns after dedup
+  winner_sharpe,          # daily Sharpe of the IS-best config
+  is_sample_fallback,     # True if SampleDataProvider was used
+  validation_passed,      # True/False/None (None = not yet validated)
+  failed_gates,           # list of gate names that failed, e.g. ["min_trades"]
+  ts                      # ISO timestamp
+}
 ```
+- `n_eff` counts independent hypothesis families (one per ticker/archetype in T2), incremented once per
+  candidate before `validate()` is called. NOT individual param configs within a sweep.
 - Append-only, lifetime, spans model swaps and re-runs (model-shopping counts).
 - Per-period budget cap; exploration pauses when spent.
 - False-discovery sanity: expect ≈ α·n_eff false survivors at threshold α; survivor count must exceed it.

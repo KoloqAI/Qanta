@@ -149,7 +149,7 @@ async def test_author_tool_rejects_bad_spec():
         "entry": {
             "when": {"crosses_above": ["sma(20)", "sma(50)"]},
             "action": "enter_long",
-            "sizing": {"fixed_pct": 5.0},
+            "sizing": {"fixed_pct": {"pct": 5.0}},
         },
         "exits": [],  # No stop_loss — must be rejected
         "risk": {
@@ -196,7 +196,7 @@ async def test_backtest_tool_works(registry):
         "entry": {
             "when": {"crosses_above": ["sma(20)", "sma(50)"]},
             "action": "enter_long",
-            "sizing": {"fixed_pct": 5.0},
+            "sizing": {"fixed_pct": {"pct": 5.0}},
         },
         "exits": [{"stop_loss": {"pct": 3.0}}],
         "risk": {
@@ -226,7 +226,7 @@ _PEER_TEST_SPEC = {
     "entry": {
         "when": {"crosses_above": ["sma(20)", "sma(50)"]},
         "action": "enter_long",
-        "sizing": {"fixed_pct": 5.0},
+        "sizing": {"fixed_pct": {"pct": 5.0}},
     },
     "exits": [{"stop_loss": {"pct": 3.0}}],
     "risk": {

@@ -10,7 +10,7 @@ def test_parse_valid_spec():
         "tickers": ["AAPL"],
         "thesis": "Mean reversion in a defined range",
         "regime": {"all_of": [{"gt": ["avg_volume(20)", 1000000]}]},
-        "entry": {"when": {"lt": ["rsi(14)", 30]}, "action": "enter_long", "sizing": {"fixed_pct": 5.0}},
+        "entry": {"when": {"lt": ["rsi(14)", 30]}, "action": "enter_long", "sizing": {"fixed_pct": {"pct": 5.0}}},
         "exits": [{"stop_loss": {"atr_mult": 1.5}}],
         "risk": {"max_position_pct": 5.0, "per_trade_stop_pct": 3.0, "max_gross_exposure": 40.0},
         "universe": {"primary": "AAPL", "peers": ["MSFT", "GOOGL"]},

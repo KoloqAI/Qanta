@@ -50,7 +50,7 @@ Settings
     /settings/models       → {tiers: {local|mid|frontier: {primary, fallback}}}
     /settings/risk         → {guardrails: {...caps...}, kill_switch_active: bool}
     /settings/validation   → {thresholds: {deflated_sharpe_min, pbo_max, min_trades, ...}}
-    /settings/tools        → {tools: [{name, description, permission, cost_tier}]}
+    /settings/tools        → {tools: [{name, description, permission}]}  # cost_tier planned, not yet implemented
     /settings/workflows    → {workflows: []}
     /settings/portfolio    → {allocation: {method, cash_buffer_pct, max_strategies}, caps: {...}}
     /settings/notifications→ {channels: [{type, enabled}], severity_routing, quiet_hours}
@@ -72,9 +72,10 @@ WS
   Scan emits: run_started → step events for universe filter, bar fetch, scan eval, ranking →
     run_finished with {candidates: [{ticker, fit_score, archetype, family}], is_sample_fallback}.
 
-  Explore emits: run_started → step events per archetype/ticker/param combo → progress events
-    with live funnel counters {trials, backtested, validated, survivors} → run_finished with
-    final funnel and survivor links to Review Queue.
+  Explore emits: run_started → step events per archetype/ticker/param combo → progress events →
+    run_finished with result {trials_run, survivors[], n_eff, ledger[], families_seen,
+    is_sample_fallback}. Funnel counters (trials → validated → survivors) are derived from the
+    ledger post-hoc by the UI, not streamed as live counters.
 ```
 
 ## Data model (column level)

@@ -95,7 +95,7 @@ def test_archetype_grid_varies_entry_params():
                 {"lt": ["rsi({rsi_period})", "{rsi_threshold}"]},
             ]},
             "action": "enter_long",
-            "sizing": {"fixed_pct": 5.0},
+            "sizing": {"fixed_pct": {"pct": 5.0}},
         },
         "exits": [{"stop_loss": {"atr_mult": "{stop_atr}"}}],
         "risk": {"per_trade_stop_pct": 4.0, "max_position_pct": 5.0},
@@ -154,7 +154,7 @@ def test_archetype_grid_caps_combinatorial_blowup():
     """Cartesian product exceeding n_variants is down-sampled, not truncated."""
     template = {
         "entry": {"when": {"all_of": [{"lt": ["rsi({rsi_period})", "{rsi_threshold}"]}]},
-                  "action": "enter_long", "sizing": {"fixed_pct": 5.0}},
+                  "action": "enter_long", "sizing": {"fixed_pct": {"pct": 5.0}}},
         "exits": [{"stop_loss": {"atr_mult": "{stop_atr}"}}],
     }
     # 8 × 8 × 5 = 320 combos → must cap
@@ -177,7 +177,7 @@ def test_dedup_before_cap_even_spread():
     # param_b is a pure threshold → changing it creates distinct variants
     template = {
         "entry": {"when": {"all_of": [{"lt": ["rsi({period})", "{threshold}"]}]},
-                  "action": "enter_long", "sizing": {"fixed_pct": 5.0}},
+                  "action": "enter_long", "sizing": {"fixed_pct": {"pct": 5.0}}},
         "exits": [{"stop_loss": {"atr_mult": "{stop_atr}"}}],
     }
     grid = {
@@ -203,7 +203,7 @@ def test_collapse_to_single_distinct():
     # Only one param, only one value in the range → product = [(val,)], same as default
     template = {
         "entry": {"when": {"all_of": [{"lt": ["rsi(14)", "{threshold}"]}]},
-                  "action": "enter_long", "sizing": {"fixed_pct": 5.0}},
+                  "action": "enter_long", "sizing": {"fixed_pct": {"pct": 5.0}}},
         "exits": [{"stop_loss": {"atr_mult": 1.0}}],
     }
     grid = {
@@ -220,7 +220,7 @@ def test_base_spec_counted_exactly_once():
     """All-defaults combo is in the grid but base appears exactly once in variants."""
     template = {
         "entry": {"when": {"all_of": [{"lt": ["rsi({period})", "{threshold}"]}]},
-                  "action": "enter_long", "sizing": {"fixed_pct": 5.0}},
+                  "action": "enter_long", "sizing": {"fixed_pct": {"pct": 5.0}}},
         "exits": [{"stop_loss": {"atr_mult": "{stop_atr}"}}],
     }
     grid = {
@@ -251,7 +251,7 @@ def test_fallback_single_variant_returns_one():
     """Non-archetype spec with no stop_loss returns a single-element list."""
     spec = {
         "entry": {"when": {"all_of": [{"lt": ["rsi(14)", 30]}]},
-                  "action": "enter_long", "sizing": {"fixed_pct": 5.0}},
+                  "action": "enter_long", "sizing": {"fixed_pct": {"pct": 5.0}}},
         "exits": [{"time_stop": {"sessions": 5}}],
     }
     variants = EvolutionLoopImpl._generate_param_grid(spec, n_variants=10)

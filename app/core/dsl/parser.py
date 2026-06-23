@@ -215,6 +215,39 @@ def _validate_condition(cond: Any, errors: list[ParseError], field: str) -> None
                 _validate_condition(args[0], errors, field)
 
 
+SIZING_SCHEMAS: dict[str, list[str]] = {
+    "fixed_pct": ["pct"],
+    "vol_scaled": ["target_vol"],
+    "kelly_capped": ["frac", "cap"],
+}
+
+
+def _validate_sizing_shape(sizing: dict, errors: list[ParseError]) -> None:
+    """Enforce canonical nested-dict form for sizing primitives."""
+    for method, required_keys in SIZING_SCHEMAS.items():
+        if method not in sizing:
+            continue
+        val = sizing[method]
+        if not isinstance(val, dict):
+            errors.append(ParseError(
+                "entry.sizing",
+                f"'{method}' must be a dict with keys {required_keys}, "
+                f"got {type(val).__name__}. Use {{{method}: {{{required_keys[0]}: ...}}}}",
+            ))
+            return
+        for rk in required_keys:
+            if rk not in val:
+                errors.append(ParseError(
+                    "entry.sizing",
+                    f"'{method}' missing required key '{rk}'",
+                ))
+            elif not isinstance(val[rk], (int, float)):
+                errors.append(ParseError(
+                    "entry.sizing",
+                    f"'{method}.{rk}' must be numeric, got {type(val[rk]).__name__}",
+                ))
+
+
 def parse_spec(raw: dict[str, Any]) -> ParseResult:
     """Parse and type-check a raw spec dict into a StrategySpec.
 
@@ -268,6 +301,8 @@ def parse_spec(raw: dict[str, Any]) -> ParseResult:
                     "entry.sizing",
                     f"Unknown sizing method; must be one of {KNOWN_SIZING}",
                 ))
+            else:
+                _validate_sizing_shape(sizing, errors)
 
     # 5. Exits -- at least one stop_loss
     exits = raw.get("exits", [])
