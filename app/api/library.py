@@ -39,7 +39,7 @@ async def list_archetypes(
             continue
         if horizon and a.get("horizon") != horizon and a.get("horizon") != "both":
             continue
-        results.append({
+        entry = {
             "id": a["id"],
             "name": a["name"],
             "family": a["family"],
@@ -47,7 +47,10 @@ async def list_archetypes(
             "thesis": a["thesis"],
             "status": a.get("status", "unexplored"),
             "source": a.get("source", "seed"),
-        })
+        }
+        if a.get("exclusion_reason"):
+            entry["exclusion_reason"] = a["exclusion_reason"]
+        results.append(entry)
     return results
 
 

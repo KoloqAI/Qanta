@@ -5,6 +5,8 @@ T2 respects budget; T3 requires human approval; nothing self-deploys.
 """
 from __future__ import annotations
 
+import json
+
 import pytest
 from app.modules.evolution.service import EvolutionLoopImpl
 from app.modules.monitoring.service import MonitoringServiceImpl, AuditLogImpl
@@ -166,6 +168,64 @@ def test_archetype_grid_caps_combinatorial_blowup():
     )
     assert len(variants) <= 16  # base + up to 15 from grid
     assert len(variants) >= 2
+
+
+def test_dedup_before_cap_even_spread():
+    """Dedup runs before the max_configs cap, preserving even spread across distinct configs."""
+    # Template where two params are intentionally coupled so some combos collide:
+    # param_a appears twice → changing it creates distinct variants
+    # param_b is a pure threshold → changing it creates distinct variants
+    template = {
+        "entry": {"when": {"all_of": [{"lt": ["rsi({period})", "{threshold}"]}]},
+                  "action": "enter_long", "sizing": {"fixed_pct": 5.0}},
+        "exits": [{"stop_loss": {"atr_mult": "{stop_atr}"}}],
+    }
+    grid = {
+        "period": {"min": 7, "max": 21, "step": 2, "default": 14},
+        "threshold": {"min": 20, "max": 35, "step": 5, "default": 25},
+        "stop_atr": {"min": 0.8, "max": 1.5, "step": 0.1, "default": 1.2},
+    }
+    variants = EvolutionLoopImpl._generate_param_grid(
+        template, n_variants=10, archetype_grid=grid,
+    )
+    # Variant 0 is always the base (defaults)
+    assert variants[0]["entry"]["when"]["all_of"][0]["lt"][0] == "rsi(14)"
+    assert variants[0]["entry"]["when"]["all_of"][0]["lt"][1] == 25
+    # All variants are distinct
+    keys = [json.dumps(v, sort_keys=True, default=str) for v in variants]
+    assert len(keys) == len(set(keys)), "Duplicate variant slipped through"
+    # Cap is respected
+    assert len(variants) <= 11  # base + up to 10
+
+
+def test_collapse_to_single_distinct():
+    """Grid that dedups to 1 distinct variant returns just the base."""
+    # Only one param, only one value in the range → product = [(val,)], same as default
+    template = {
+        "entry": {"when": {"all_of": [{"lt": ["rsi(14)", "{threshold}"]}]},
+                  "action": "enter_long", "sizing": {"fixed_pct": 5.0}},
+        "exits": [{"stop_loss": {"atr_mult": 1.0}}],
+    }
+    grid = {
+        "threshold": {"min": 25, "max": 25, "step": 1, "default": 25},
+    }
+    variants = EvolutionLoopImpl._generate_param_grid(
+        template, n_variants=10, archetype_grid=grid,
+    )
+    # Only the base — deduped product collapses to nothing new
+    assert len(variants) == 1
+
+
+def test_fallback_single_variant_returns_one():
+    """Non-archetype spec with no stop_loss returns a single-element list."""
+    spec = {
+        "entry": {"when": {"all_of": [{"lt": ["rsi(14)", 30]}]},
+                  "action": "enter_long", "sizing": {"fixed_pct": 5.0}},
+        "exits": [{"time_stop": {"sessions": 5}}],
+    }
+    variants = EvolutionLoopImpl._generate_param_grid(spec, n_variants=10)
+    assert len(variants) == 1
+    assert variants[0] is spec
 
 
 @pytest.mark.asyncio

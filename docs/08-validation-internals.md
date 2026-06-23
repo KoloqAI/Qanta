@@ -105,8 +105,9 @@ def confidence(spec, target_R, horizon_H, oos_windows, n_eff, base_rate_p0):
   peer_hit = fraction of peers with net_edge > 0. Peers auto-selected via correlation (per archetype `peers_hint`);
   if insufficient peer data (< `min_peers`), gate fails closed. Peer backtests are part of the single validation
   (counted in the search-budget ledger, not a separate multiple-testing backdoor).
-  `gates_version` (currently 2) tracks gate-set evolution; reports predating it are stale and blocked from
-  approval/deployment until re-validated.
+  `gates_version` (currently 3) tracks gate-set evolution; reports predating it are stale and blocked from
+  approval/deployment until re-validated. Version history: v2 = peer-hit gate added; v3 = explicit `{param}`
+  placeholder binding (old naming-convention regex could produce no-op params and duplicate PBO columns).
 - Headline: *Conditional on {regime}, deflated {C}% (90% {C_lo}–{C_hi}) of ≥{R} over {H}, max loss {L};
   regime held {G}% of {window}; peers {f}/{n}. (DSR {d}, PBO {p}.)* Optionally a confidence-vs-target curve.
 - Never authored by the LLM. Calibration logged vs realized; recalibrate OOS only.

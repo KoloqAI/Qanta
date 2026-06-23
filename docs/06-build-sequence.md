@@ -70,6 +70,9 @@ meta-lockbox; Evolution screen.
 **Gate:** loop promotes a proven strategy and retires a decayed one; T2 respects the budget and feeds N_eff;
 a T3 change requires human approval and a non-degrading meta-lockbox result; nothing self-deploys.
 **Status:** Done. T1 promote/retire, T2 budgeted discovery, T3 human-gated proposals, meta-lockbox.
+Post-milestone fix: replaced naming-convention regex param substitution with explicit `{param}` placeholder
+binding. 12 no-op params across 9 archetypes were producing duplicate PBO columns; `gates_version` bumped to 3
+to invalidate stale reports. Load-time validation now excludes archetypes with unbound params.
 
 ## M9 — Hardening → optional live 🔜
 Real-time data plan, corporate-actions + LULD-halt handling, broker-protection re-arm on reconnect, Terraform/AWS deploy, observability, calibration tracking live, repeat safety drills.

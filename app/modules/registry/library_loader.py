@@ -39,11 +39,18 @@ def _fmt_num(v: float | int) -> str:
     return str(v)
 
 
+def _coerce_numeric(v: float | int) -> float | int:
+    """Coerce whole floats to int: 14.0 → 14, 1.2 → 1.2."""
+    if isinstance(v, float) and v == int(v):
+        return int(v)
+    return v
+
+
 def _fill_placeholders(template: dict, values: dict[str, float | int]) -> dict:
     """Recursively fill ``{param_name}`` placeholders in *template*.
 
     - Pure-value placeholder (entire string is ``"{param}"``): replaced with
-      the raw numeric value (int or float).
+      the raw numeric value, whole floats coerced to int (25.0 → 25).
     - Embedded placeholder (``"rsi({rsi_period})"``): string-formatted with
       int-coerced numerics so ``14.0`` becomes ``"rsi(14)"``.
     """
@@ -52,7 +59,7 @@ def _fill_placeholders(template: dict, values: dict[str, float | int]) -> dict:
         if isinstance(obj, str):
             m = re.fullmatch(r"\{(\w+)\}", obj)
             if m and m.group(1) in values:
-                return values[m.group(1)]
+                return _coerce_numeric(values[m.group(1)])
             def _repl(match: re.Match) -> str:
                 name = match.group(1)
                 if name in values:
@@ -243,6 +250,22 @@ def load_archetypes(validate: bool = True) -> dict[str, dict[str, Any]]:
                     logger.error("Param binding error: %s", err)
                 all_errors.extend(binding_errors)
                 excluded.append(archetype_id)
+                archetypes[archetype_id] = {
+                    "id": archetype_id,
+                    "name": raw.get("name", archetype_id),
+                    "family": raw.get("family", ""),
+                    "horizon": raw.get("horizon", "both"),
+                    "thesis": raw.get("thesis", ""),
+                    "template": template,
+                    "scan": raw.get("scan", {}),
+                    "param_grid": param_grid,
+                    "source": "seed",
+                    "status": "excluded",
+                    "exclusion_reason": "; ".join(binding_errors),
+                    "watches": raw.get("watches", []),
+                    "peers_hint": raw.get("peers_hint", ""),
+                    "default_universe": raw.get("default_universe", {}),
+                }
                 continue
 
             distinct_errors = _validate_variant_distinctness(
@@ -253,6 +276,22 @@ def load_archetypes(validate: bool = True) -> dict[str, dict[str, Any]]:
                     logger.error("Variant distinctness error: %s", err)
                 all_errors.extend(distinct_errors)
                 excluded.append(archetype_id)
+                archetypes[archetype_id] = {
+                    "id": archetype_id,
+                    "name": raw.get("name", archetype_id),
+                    "family": raw.get("family", ""),
+                    "horizon": raw.get("horizon", "both"),
+                    "thesis": raw.get("thesis", ""),
+                    "template": template,
+                    "scan": raw.get("scan", {}),
+                    "param_grid": param_grid,
+                    "source": "seed",
+                    "status": "excluded",
+                    "exclusion_reason": "; ".join(distinct_errors),
+                    "watches": raw.get("watches", []),
+                    "peers_hint": raw.get("peers_hint", ""),
+                    "default_universe": raw.get("default_universe", {}),
+                }
                 continue
 
         # Fill defaults before DSL validation
@@ -293,12 +332,16 @@ def load_archetypes(validate: bool = True) -> dict[str, dict[str, Any]]:
             len(excluded), ", ".join(excluded),
         )
 
+    total_files = len(list(LIBRARY_DIR.glob("*.yaml")))
     if all_errors:
         logger.warning(
-            "Library loaded with %d warning(s) across %d archetype(s)",
-            len(all_errors), len(archetypes),
+            "Library loaded: %d/%d archetypes OK, %d excluded, %d warning(s)",
+            len(archetypes), total_files, len(excluded), len(all_errors),
         )
     else:
-        logger.info("Loaded %d archetype(s) from %s", len(archetypes), LIBRARY_DIR)
+        logger.info(
+            "Library loaded: %d/%d archetypes OK, 0 excluded",
+            len(archetypes), total_files,
+        )
 
     return archetypes

@@ -38,13 +38,16 @@ def _build_archetype_variants(
 
     *template* contains ``{param}`` placeholders; *grid* entries have
     ``default`` values.  The base variant uses defaults; sweep variants
-    fill other combos from the cartesian product (strided-sampled if
-    it exceeds *n_max*).
+    fill other combos from the cartesian product.
+
+    Order: build full product → dedup distinct specs → strided-cap on
+    the distinct set.  Base spec is always variant 0.
 
     Returns a **deduplicated** list — identical specs never appear twice.
     """
     defaults = _extract_defaults(grid)
     base = _fill_placeholders(template, defaults)
+    base_key = json.dumps(base, sort_keys=True, default=str)
 
     param_names = list(grid.keys())
     param_values = [resolve_grid_values(grid[k]) for k in param_names]
@@ -53,30 +56,34 @@ def _build_archetype_variants(
     if not full_product:
         return [base]
 
-    if len(full_product) > n_max:
-        indices = np.round(np.linspace(0, len(full_product) - 1, n_max)).astype(int)
-        indices = list(dict.fromkeys(indices))
-        if len(indices) < n_max:
-            rng = np.random.default_rng(42)
-            remaining = [i for i in range(len(full_product)) if i not in set(indices)]
-            extra = rng.choice(remaining, min(n_max - len(indices), len(remaining)), replace=False)
-            indices.extend(int(e) for e in extra)
-        selected = [full_product[i] for i in sorted(indices[:n_max])]
-    else:
-        selected = full_product
-
-    seen = {json.dumps(base, sort_keys=True, default=str)}
-    variants: list[dict] = [base]
-
-    for combo in selected:
+    # Step 1: dedup full product into distinct variants (excluding base)
+    seen = {base_key}
+    distinct: list[dict] = []
+    for combo in full_product:
         values = dict(zip(param_names, combo))
         variant = _fill_placeholders(template, values)
         key = json.dumps(variant, sort_keys=True, default=str)
         if key not in seen:
             seen.add(key)
-            variants.append(variant)
+            distinct.append(variant)
 
-    return variants if len(variants) >= 2 else [base]
+    if not distinct:
+        return [base]
+
+    # Step 2: strided cap on the distinct set (not the raw product)
+    if len(distinct) > n_max:
+        indices = np.round(np.linspace(0, len(distinct) - 1, n_max)).astype(int)
+        indices = list(dict.fromkeys(indices))
+        if len(indices) < n_max:
+            rng = np.random.default_rng(42)
+            remaining = [i for i in range(len(distinct)) if i not in set(indices)]
+            extra = rng.choice(remaining, min(n_max - len(indices), len(remaining)), replace=False)
+            indices.extend(int(e) for e in extra)
+        selected = [distinct[i] for i in sorted(indices[:n_max])]
+    else:
+        selected = distinct
+
+    return [base] + selected
 
 
 def _build_stop_loss_variants(spec_raw: dict, n_max: int) -> list[dict]:
@@ -298,6 +305,8 @@ class EvolutionLoopImpl:
             # Resolve archetype template + param_grid for this candidate
             archetype_id = candidate.get("archetype", "")
             archetype = archetypes.get(archetype_id, {})
+            if archetype.get("status") == "excluded":
+                archetype = {}
             archetype_grid = archetype.get("param_grid") or None
             archetype_template = archetype.get("template") if archetype_grid else None
 

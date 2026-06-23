@@ -16,7 +16,7 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-GATES_VERSION = 2
+GATES_VERSION = 3  # bumped: v3 = explicit {param} placeholder binding (no-op params fixed)
 
 
 def _load_validation_config() -> dict[str, Any]:

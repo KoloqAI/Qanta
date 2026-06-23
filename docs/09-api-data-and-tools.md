@@ -103,7 +103,7 @@ Scope every user-owned row by `user_id` (single-user now, multi-user-ready).
 | `news_search` | read | **planned** — ticker/window → news items (requires news module). Not yet implemented. |
 | `author_strategy` | read | thesis + intent → DSL spec (LLM-authored, DSL type-check gate applied). Falls back to template with `is_fallback_template: true` when no LLM configured. |
 | `backtest` | read | spec, window → BacktestResult |
-| `validate` | read | spec, n_eff?, competing_returns? → ValidationReport. Gauntlet incl. peer-hit gate and multi-config PBO (via CSCV). When `competing_returns` (T×N matrix, N≥2) is provided, computes real PBO over the param-grid configs; otherwise PBO=None (single-config: gate skipped, DSR+n_eff carry deflation). `gates_version` tracks gate-set evolution; stale reports blocked from approval/deployment. |
+| `validate` | read | spec, n_eff?, competing_returns? → ValidationReport. Gauntlet incl. peer-hit gate and multi-config PBO (via CSCV). When `competing_returns` (T×N matrix, N≥2) is provided, computes real PBO over the param-grid configs (columns deduped — identical return vectors collapsed); otherwise PBO=None (single-config: gate skipped, DSR+n_eff carry deflation). Survivor dicts include `n_configs_swept` and `n_configs_distinct`. `gates_version` tracks gate-set evolution; stale reports blocked from approval/deployment. |
 | `peer_test` | read | {spec, peers?, as_of?} → {peer_hit, n_peers_tested, n_peers_with_edge, sufficient, details}. Backtests spec on correlation-based peers (point-in-time). Peers auto-selected via return correlation if not explicit. Fails closed when peer data is insufficient. |
 | `query_book` | read | — → portfolio/positions/exposure |
 | `query_performance` | read | **planned** — filter → history, realized-vs-expected, calibration. Not yet implemented. |
@@ -112,6 +112,6 @@ Scope every user-owned row by `user_id` (single-user now, multi-user-ready).
 | `deploy_strategy` `approve_strategy` | risk_increasing | … → STAGED only; executed by deterministic code after an Approval; never invoked by an LLM |
 | `promote_to_live` `set_guardrail` `place_order` | risk_increasing | **planned** — not yet registered. Will be STAGED-only like deploy/approve. |
 
-12 tools registered as of `gates_version` 2.
+12 tools registered as of `gates_version` 3.
 
 Workflows are declarative pipelines over these tools (e.g., evolution T2: `universe_scan → author_strategy → backtest(param grid) → validate(competing_returns)`), runnable on a schedule without an interactive agent.
