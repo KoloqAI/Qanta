@@ -1,0 +1,50 @@
+id: atr_channel_breakout
+name: ATR channel breakout
+family: volatility
+horizon: both
+thesis: "Enter when price breaks above N*ATR from the mean; volatility expansion signals directional conviction."
+watches: [close, sma, atr, avg_volume, adx]
+
+regime:
+  all_of:
+    - { gt: ["avg_volume(20)", 500000] }
+    - { gt: ["atr(14)", 0.3] }
+
+entry:
+  when:
+    all_of:
+      - { gt: ["close", "sma(20)"] }
+      - { gt: ["atr(14)", 0.5] }
+  action: enter_long
+  sizing:
+    vol_scaled:
+      target_vol: 0.08
+
+exits:
+  - stop_loss:
+      atr_mult: 1.5
+  - trailing_stop:
+      atr_mult: 2.0
+  - time_stop:
+      sessions: 15
+  - regime_break_exit: true
+
+risk:
+  per_trade_stop_pct: 4.0
+  max_position_pct: 5.0
+  max_gross_exposure: 40.0
+
+param_grid:
+  sma_period: { min: 15, max: 30, step: 5 }
+  atr_mult: { min: 1.0, max: 2.5, step: 0.25 }
+  stop_atr: { min: 1.0, max: 2.0, step: 0.25 }
+
+scan:
+  all_of:
+    - { gt: ["avg_volume(20)", 500000] }
+    - { gt: ["atr(14)", 0.5] }
+
+peers_hint: sector_or_corr
+default_universe:
+  min_price: 5
+  min_dollar_volume: 5000000

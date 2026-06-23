@@ -1,0 +1,50 @@
+id: vol_scaled_exposure
+name: Vol-scaled exposure
+family: volatility
+horizon: both
+thesis: "Scale position size inversely to realized volatility; hold trending names with tighter risk in high-vol."
+watches: [close, sma, realized_vol, atr, avg_volume, adx]
+
+regime:
+  all_of:
+    - { gt: ["avg_volume(20)", 500000] }
+    - { gt: ["adx(14)", 18] }
+
+entry:
+  when:
+    all_of:
+      - { gt: ["close", "sma(20)"] }
+      - { gt: ["adx(14)", 20] }
+  action: enter_long
+  sizing:
+    vol_scaled:
+      target_vol: 0.10
+
+exits:
+  - stop_loss:
+      atr_mult: 2.0
+  - trailing_stop:
+      atr_mult: 2.5
+  - time_stop:
+      sessions: 20
+  - regime_break_exit: true
+
+risk:
+  per_trade_stop_pct: 5.0
+  max_position_pct: 5.0
+  max_gross_exposure: 40.0
+
+param_grid:
+  target_vol: { min: 0.06, max: 0.15, step: 0.02 }
+  sma_period: { min: 15, max: 30, step: 5 }
+  stop_atr: { min: 1.5, max: 3.0, step: 0.5 }
+
+scan:
+  all_of:
+    - { gt: ["avg_volume(20)", 500000] }
+    - { gt: ["adx(14)", 18] }
+
+peers_hint: sector_or_corr
+default_universe:
+  min_price: 5
+  min_dollar_volume: 5000000

@@ -1,0 +1,52 @@
+id: pullback_continuation
+name: Pullback continuation
+family: momentum_trend
+horizon: swing
+thesis: "Buy pullbacks within an established uptrend; enter when RSI dips in a trending regime."
+watches: [close, sma, rsi, atr, adx, avg_volume]
+
+regime:
+  all_of:
+    - { gt: ["avg_volume(20)", 500000] }
+    - { gt: ["adx(14)", 20] }
+    - { gt: ["close", "sma(50)"] }
+
+entry:
+  when:
+    all_of:
+      - { lt: ["rsi(14)", 40] }
+      - { gt: ["close", "sma(50)"] }
+  action: enter_long
+  sizing:
+    fixed_pct:
+      pct: 5.0
+
+exits:
+  - stop_loss:
+      atr_mult: 1.5
+  - take_profit:
+      atr_mult: 3.0
+  - time_stop:
+      sessions: 15
+  - regime_break_exit: true
+
+risk:
+  per_trade_stop_pct: 4.0
+  max_position_pct: 5.0
+  max_gross_exposure: 40.0
+
+param_grid:
+  trend_sma: { min: 30, max: 60, step: 10 }
+  rsi_dip: { min: 30, max: 45, step: 5 }
+  stop_atr: { min: 1.0, max: 2.0, step: 0.25 }
+
+scan:
+  all_of:
+    - { gt: ["avg_volume(20)", 500000] }
+    - { gt: ["close", "sma(50)"] }
+    - { lt: ["rsi(14)", 45] }
+
+peers_hint: sector_or_corr
+default_universe:
+  min_price: 5
+  min_dollar_volume: 5000000

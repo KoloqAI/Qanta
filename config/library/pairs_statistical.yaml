@@ -1,0 +1,50 @@
+id: pairs_statistical
+name: Statistical pairs trading
+family: cross_sectional
+horizon: swing
+thesis: "Trade the spread between cointegrated pairs; enter when spread z-score exceeds threshold."
+watches: [close, zscore, avg_volume, realized_vol]
+
+regime:
+  all_of:
+    - { gt: ["avg_volume(20)", 500000] }
+    - { between: ["realized_vol(20)", 0.08, 0.40] }
+
+entry:
+  when:
+    all_of:
+      - { lt: ["zscore(20)", -2.0] }
+      - { gt: ["avg_volume(20)", 500000] }
+  action: enter_long
+  sizing:
+    fixed_pct:
+      pct: 4.0
+
+exits:
+  - stop_loss:
+      atr_mult: 1.5
+  - take_profit:
+      atr_mult: 2.0
+  - time_stop:
+      sessions: 15
+  - regime_break_exit: true
+
+risk:
+  per_trade_stop_pct: 4.0
+  max_position_pct: 4.0
+  max_gross_exposure: 30.0
+
+param_grid:
+  zscore_period: { min: 15, max: 40, step: 5 }
+  entry_z: { min: -3.0, max: -1.5, step: 0.5 }
+  exit_z: { min: -0.5, max: 0.5, step: 0.25 }
+
+scan:
+  all_of:
+    - { gt: ["avg_volume(20)", 500000] }
+    - { between: ["realized_vol(20)", 0.08, 0.40] }
+
+peers_hint: sector_or_corr
+default_universe:
+  min_price: 10
+  min_dollar_volume: 5000000

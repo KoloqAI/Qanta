@@ -12,14 +12,15 @@ quanta/
 ├── docker-compose.yml              # api, web, worker, postgres, redis, ollama, ib-gateway/ibeam
 ├── pyproject.toml                  # pinned deps
 ├── .cursor/rules/                  # always-on agent rules (00–04)
-├── docs/                           # 01–12 specification
+├── docs/                           # 01–13 specification
 ├── design/                         # hi-fi mockups (visual source of truth)
 ├── config/
 │   ├── guardrails.yaml             # global risk limits (per-trade stop, caps, daily kill-switch)
 │   ├── validation.yaml             # pre-registered thresholds (DSR/PBO/slope/min-trades/peer)
 │   ├── portfolio.yaml              # allocation method, per-symbol/sector caps, cash buffer, max strategies
 │   ├── notifications.yaml          # channels + event→severity routing + quiet hours
-│   └── models.yaml                 # LiteLLM tier routing + fallbacks
+│   ├── models.yaml                 # LiteLLM tier routing + fallbacks
+│   └── library/                    # seed strategy archetypes (doc 13): one YAML per archetype
 ├── alembic/                        # migrations
 ├── app/
 │   ├── main.py                     # FastAPI app factory, router mounting
@@ -36,7 +37,7 @@ quanta/
 │   │   ├── auth/                   # M0  users, sessions, authz
 │   │   ├── data/                   # M1  MarketDataProvider impls, FeatureStore, corp-actions, halts (HaltDetectorImpl)
 │   │   ├── research/               # M2  LangGraph agent, ResearchDomain, StrategyAuthor, LLMProvider (LiteLLM)
-│   │   ├── registry/               # M3  Strategy + versions + lifecycle
+│   │   ├── registry/               # M3  Strategy + versions + lifecycle + library_archetypes (doc 13)
 │   │   ├── backtest/               # M4  Backtester (nautilus), cost model, (optional PyBroker)
 │   │   ├── validation/             # M5  walk-forward, DSR, PBO, robustness, confidence, ledger, lockbox, verification suite
 │   │   ├── execution/              # M6  ExecutionRuntime, Broker impls (IBKR/Paper), broker-resident brackets, heartbeat watchdog, DeploymentGate
@@ -45,7 +46,7 @@ quanta/
 │   │   ├── scheduling/             # Scheduler + MarketCalendar (windows, EOD flatten via EODFlattenJob, job cadence)
 │   │   ├── notifications/          # Notifier (email/Telegram/SMS) + watchdog/dead-man's-switch
 │   │   ├── monitoring/             # M8  perf, decay, calibration, audit log
-│   │   ├── evolution/              # scheduled promote/retire/discover/propose; meta-lockbox
+│   │   ├── evolution/              # scheduled promote/retire/discover/propose; meta-lockbox; seeded wide exploration (doc 13)
 │   │   └── news/                   # optional capability module (default off)
 │   ├── models/                     # SQLAlchemy ORM (see docs/09 data model)
 │   ├── schemas/                    # Pydantic DTOs
@@ -61,7 +62,8 @@ quanta/
 │       ├── components/             # shadcn/ui + app components (confidence-interval bar, stat card, status bar, staged-action card)
 │       ├── hooks/
 │       └── pages/                  # Login, Portfolio, Assistant, StrategyDetail, ReviewQueue,
-│                                   #   Monitor, Performance, Registry, Evolution, Settings (+ DeployConfig modal)
+│                                   #   Monitor, Performance, Registry (Instantiated + Library tabs),
+│                                   #   BacktestSandbox, Evolution, Settings (+ DeployConfig modal)
 ├── ops/
 │   └── ibeam/                      # IB Gateway headless auth config
 ├── terraform/                      # ECS/Fargate, RDS, ElastiCache, Secrets Manager, SES, ALB

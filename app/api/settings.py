@@ -139,6 +139,38 @@ async def update_tools(user: CurrentUser, db: DB) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Portfolio & Allocation
+# ---------------------------------------------------------------------------
+
+
+@router.get("/portfolio")
+async def get_portfolio_settings(user: CurrentUser) -> dict:
+    """Return portfolio allocation config from config/portfolio.yaml."""
+    return _load_yaml("portfolio.yaml")
+
+
+@router.put("/portfolio")
+async def update_portfolio_settings(user: CurrentUser, db: DB) -> dict:
+    return {"detail": "accepted"}
+
+
+# ---------------------------------------------------------------------------
+# Notifications
+# ---------------------------------------------------------------------------
+
+
+@router.get("/notifications")
+async def get_notifications(user: CurrentUser) -> dict:
+    """Return notification config from config/notifications.yaml."""
+    return _load_yaml("notifications.yaml")
+
+
+@router.put("/notifications")
+async def update_notifications(user: CurrentUser, db: DB) -> dict:
+    return {"detail": "accepted"}
+
+
+# ---------------------------------------------------------------------------
 # Workflows
 # ---------------------------------------------------------------------------
 

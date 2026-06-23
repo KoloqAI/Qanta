@@ -1,0 +1,49 @@
+id: intraday_momentum_continuation
+name: Intraday momentum continuation
+family: time_microstructure
+horizon: intraday
+thesis: "First-half momentum predicts second-half direction; ride intraday trend continuation on high-volume days."
+watches: [close, high, low, atr, avg_volume, volume]
+
+regime:
+  all_of:
+    - { gt: ["avg_volume(20)", 1000000] }
+    - { gt: ["atr(14)", 0.5] }
+
+entry:
+  when:
+    all_of:
+      - { gt: ["close", "rolling_high(5)"] }
+      - { gt: ["volume", "avg_volume(20)"] }
+  action: enter_long
+  sizing:
+    fixed_pct:
+      pct: 3.0
+
+exits:
+  - stop_loss:
+      atr_mult: 0.6
+  - take_profit:
+      atr_mult: 1.2
+  - time_stop:
+      sessions: 1
+  - regime_break_exit: true
+
+risk:
+  per_trade_stop_pct: 2.0
+  max_position_pct: 3.0
+  max_gross_exposure: 25.0
+
+param_grid:
+  lookback: { min: 3, max: 8, step: 1 }
+  stop_atr: { min: 0.4, max: 0.8, step: 0.1 }
+
+scan:
+  all_of:
+    - { gt: ["avg_volume(20)", 1000000] }
+    - { gt: ["atr(14)", 0.5] }
+
+peers_hint: sector_or_corr
+default_universe:
+  min_price: 10
+  min_dollar_volume: 10000000

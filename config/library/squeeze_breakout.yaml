@@ -1,0 +1,50 @@
+id: squeeze_breakout
+name: Volatility squeeze breakout
+family: volatility
+horizon: both
+thesis: "Enter when Bollinger bands contract inside Keltner channels (squeeze); breakout from low-vol compression."
+watches: [close, bollinger, atr, avg_volume, realized_vol, adx]
+
+regime:
+  all_of:
+    - { gt: ["avg_volume(20)", 500000] }
+    - { lt: ["realized_vol(20)", 0.25] }
+
+entry:
+  when:
+    all_of:
+      - { gt: ["close", "bollinger(20,2).upper"] }
+      - { gt: ["adx(14)", 20] }
+  action: enter_long
+  sizing:
+    vol_scaled:
+      target_vol: 0.10
+
+exits:
+  - stop_loss:
+      atr_mult: 1.5
+  - trailing_stop:
+      atr_mult: 2.0
+  - time_stop:
+      sessions: 10
+  - regime_break_exit: true
+
+risk:
+  per_trade_stop_pct: 4.0
+  max_position_pct: 5.0
+  max_gross_exposure: 40.0
+
+param_grid:
+  bb_period: { min: 15, max: 25, step: 5 }
+  bb_width: { min: 1.5, max: 2.5, step: 0.5 }
+  stop_atr: { min: 1.0, max: 2.0, step: 0.25 }
+
+scan:
+  all_of:
+    - { gt: ["avg_volume(20)", 500000] }
+    - { lt: ["realized_vol(20)", 0.20] }
+
+peers_hint: sector_or_corr
+default_universe:
+  min_price: 5
+  min_dollar_volume: 5000000

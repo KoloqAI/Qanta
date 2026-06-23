@@ -8,6 +8,7 @@ import { MonitorPage } from './pages/Monitor'
 import { PerformancePage } from './pages/Performance'
 import { ReviewQueuePage } from './pages/ReviewQueue'
 import { RegistryPage } from './pages/Registry'
+import { BacktestSandboxPage } from './pages/BacktestSandbox'
 import { EvolutionPage } from './pages/Evolution'
 import { SettingsPage } from './pages/Settings'
 import { StrategyDetailPage } from './pages/StrategyDetail'
@@ -37,6 +38,7 @@ export function AppRouter() {
         <Route path="/performance" element={<PerformancePage />} />
         <Route path="/review" element={<ReviewQueuePage />} />
         <Route path="/registry" element={<RegistryPage />} />
+        <Route path="/backtest" element={<BacktestSandboxPage />} />
         <Route path="/evolution" element={<EvolutionPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/strategy/:id" element={<StrategyDetailPage />} />

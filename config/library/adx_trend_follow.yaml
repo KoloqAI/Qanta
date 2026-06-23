@@ -1,0 +1,50 @@
+id: adx_trend_follow
+name: ADX trend follow
+family: momentum_trend
+horizon: swing
+thesis: "Enter strong trends identified by rising ADX above threshold; hold until trend exhaustion."
+watches: [close, adx, atr, sma, avg_volume]
+
+regime:
+  all_of:
+    - { gt: ["avg_volume(20)", 500000] }
+    - { gt: ["adx(14)", 25] }
+
+entry:
+  when:
+    all_of:
+      - { gt: ["adx(14)", 30] }
+      - { gt: ["close", "sma(20)"] }
+  action: enter_long
+  sizing:
+    vol_scaled:
+      target_vol: 0.10
+
+exits:
+  - stop_loss:
+      atr_mult: 2.0
+  - trailing_stop:
+      atr_mult: 2.5
+  - time_stop:
+      sessions: 25
+  - regime_break_exit: true
+
+risk:
+  per_trade_stop_pct: 5.0
+  max_position_pct: 5.0
+  max_gross_exposure: 40.0
+
+param_grid:
+  adx_period: { min: 10, max: 20, step: 2 }
+  adx_threshold: { min: 25, max: 40, step: 5 }
+  stop_atr: { min: 1.5, max: 3.0, step: 0.5 }
+
+scan:
+  all_of:
+    - { gt: ["avg_volume(20)", 500000] }
+    - { gt: ["adx(14)", 25] }
+
+peers_hint: sector_or_corr
+default_universe:
+  min_price: 5
+  min_dollar_volume: 5000000

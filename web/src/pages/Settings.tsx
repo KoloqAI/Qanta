@@ -5,13 +5,16 @@ import { useTheme } from '../hooks/useTheme'
 import { useQuery } from '@tanstack/react-query'
 
 const TABS = [
-  { id: 'account', label: 'Account' },
   { id: 'connections', label: 'Connections' },
   { id: 'models', label: 'Models & Routing' },
   { id: 'risk', label: 'Risk & Guardrails' },
   { id: 'validation', label: 'Validation' },
+  { id: 'portfolio', label: 'Portfolio & Allocation' },
   { id: 'tools', label: 'Tools & Modules' },
+  { id: 'workflows', label: 'Workflows' },
+  { id: 'notifications', label: 'Notifications' },
   { id: 'appearance', label: 'Appearance' },
+  { id: 'account', label: 'Account' },
 ] as const
 
 type TabId = (typeof TABS)[number]['id']
@@ -44,8 +47,24 @@ interface ToolModule {
   enabled: boolean
 }
 
+interface PortfolioSetting {
+  label: string
+  value: string
+}
+
+interface NotificationChannel {
+  channel: string
+  enabled: boolean
+}
+
+interface NotificationConfig {
+  channels: NotificationChannel[]
+  severity_routing: Record<string, string[]>
+  quiet_hours: { enabled: boolean; start: string; end: string }
+}
+
 export function SettingsPage() {
-  const [tab, setTab] = useState<TabId>('account')
+  const [tab, setTab] = useState<TabId>('connections')
   const { user } = useAuth()
   const { theme, setTheme } = useTheme()
   const [oldPassword, setOldPassword] = useState('')
@@ -141,6 +160,46 @@ export function SettingsPage() {
       }))
     },
     enabled: tab === 'tools',
+  })
+
+  const { data: portfolio } = useQuery<PortfolioSetting[]>({
+    queryKey: ['settings', 'portfolio'],
+    queryFn: async () => {
+      const d = await apiFetch('/api/settings/portfolio')
+      const a = d.allocation ?? {}
+      const c = d.caps ?? {}
+      return [
+        { label: 'Allocation Method', value: a.method ?? 'N/A' },
+        { label: 'Cash Buffer', value: a.cash_buffer_pct != null ? `${a.cash_buffer_pct}%` : 'N/A' },
+        { label: 'Max Strategies', value: a.max_strategies != null ? String(a.max_strategies) : 'N/A' },
+        { label: 'Per-Symbol Cap', value: c.per_symbol_pct != null ? `${c.per_symbol_pct}%` : 'N/A' },
+        { label: 'Per-Sector Cap', value: c.per_sector_pct != null ? `${c.per_sector_pct}%` : 'N/A' },
+        { label: 'Max Gross Exposure', value: c.max_gross_exposure_pct != null ? `${c.max_gross_exposure_pct}%` : 'N/A' },
+      ]
+    },
+    enabled: tab === 'portfolio',
+  })
+
+  const { data: workflows } = useQuery<unknown[]>({
+    queryKey: ['settings', 'workflows'],
+    queryFn: () => apiFetch('/api/settings/workflows'),
+    enabled: tab === 'workflows',
+  })
+
+  const { data: notifications } = useQuery<NotificationConfig>({
+    queryKey: ['settings', 'notifications'],
+    queryFn: async () => {
+      const d = await apiFetch('/api/settings/notifications')
+      return {
+        channels: (d.channels ?? []).map((ch: { type: string; enabled: boolean }) => ({
+          channel: ch.type,
+          enabled: ch.enabled,
+        })),
+        severity_routing: d.severity_routing ?? {},
+        quiet_hours: d.quiet_hours ?? { enabled: false, start: '22:00', end: '07:00' },
+      }
+    },
+    enabled: tab === 'notifications',
   })
 
   const handleChangePassword = async (e: React.FormEvent) => {
@@ -298,6 +357,27 @@ export function SettingsPage() {
             </div>
           )}
 
+          {tab === 'portfolio' && (
+            <div className="space-y-4">
+              <h2 className="font-display text-sm text-muted">Portfolio &amp; Allocation</h2>
+              <div className="rounded-lg border border-hairline bg-surface p-4 space-y-3">
+                {(portfolio ?? [
+                  { label: 'Allocation Method', value: 'N/A' },
+                  { label: 'Cash Buffer', value: 'N/A' },
+                  { label: 'Max Strategies', value: 'N/A' },
+                  { label: 'Per-Symbol Cap', value: 'N/A' },
+                  { label: 'Per-Sector Cap', value: 'N/A' },
+                  { label: 'Max Gross Exposure', value: 'N/A' },
+                ]).map(p => (
+                  <div key={p.label} className="flex items-center justify-between py-2 border-b border-hairline last:border-0">
+                    <span className="text-sm text-ink">{p.label}</span>
+                    <span className="font-mono text-sm text-muted">{p.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {tab === 'tools' && (
             <div className="space-y-4">
               <h2 className="font-display text-sm text-muted">Tools &amp; Modules</h2>
@@ -315,6 +395,78 @@ export function SettingsPage() {
                     </span>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {tab === 'workflows' && (
+            <div className="space-y-4">
+              <h2 className="font-display text-sm text-muted">Workflows</h2>
+              {(workflows ?? []).length === 0 ? (
+                <div className="rounded-lg border border-hairline bg-surface p-12 text-center">
+                  <p className="text-muted">No workflows configured</p>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-hairline bg-surface p-4 space-y-3">
+                  {(workflows ?? []).map((_, i) => (
+                    <div key={i} className="flex items-center justify-between py-2 border-b border-hairline last:border-0">
+                      <span className="text-sm text-ink">Workflow {i + 1}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {tab === 'notifications' && (
+            <div className="space-y-4">
+              <h2 className="font-display text-sm text-muted">Notifications</h2>
+              <div className="rounded-lg border border-hairline bg-surface p-4 space-y-4">
+                <p className="text-sm text-ink font-medium">Channels</p>
+                {(notifications?.channels ?? [
+                  { channel: 'email', enabled: false },
+                  { channel: 'telegram', enabled: false },
+                  { channel: 'sms', enabled: false },
+                ]).map(ch => (
+                  <div key={ch.channel} className="flex items-center justify-between py-2 border-b border-hairline last:border-0">
+                    <span className="text-sm text-ink capitalize">{ch.channel}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded ${ch.enabled ? 'bg-gain/10 text-gain' : 'bg-surface text-muted'}`}>
+                      {ch.enabled ? 'Enabled' : 'Disabled'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="rounded-lg border border-hairline bg-surface p-4 space-y-3">
+                <p className="text-sm text-ink font-medium">Severity Routing</p>
+                {Object.entries(notifications?.severity_routing ?? {}).length === 0 ? (
+                  <p className="text-sm text-faint">No routing rules configured</p>
+                ) : (
+                  Object.entries(notifications?.severity_routing ?? {}).map(([severity, channels]) => (
+                    <div key={severity} className="flex items-center justify-between py-2 border-b border-hairline last:border-0">
+                      <span className="text-sm text-ink capitalize">{severity}</span>
+                      <span className="text-xs text-muted font-mono">{(channels as string[]).join(', ')}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="rounded-lg border border-hairline bg-surface p-4 space-y-3">
+                <p className="text-sm text-ink font-medium">Quiet Hours</p>
+                <div className="flex items-center justify-between py-2">
+                  <span className="text-sm text-ink">Status</span>
+                  <span className={`text-xs px-2 py-0.5 rounded ${
+                    notifications?.quiet_hours?.enabled ? 'bg-gain/10 text-gain' : 'bg-surface text-muted'
+                  }`}>
+                    {notifications?.quiet_hours?.enabled ? 'Enabled' : 'Disabled'}
+                  </span>
+                </div>
+                {notifications?.quiet_hours?.enabled && (
+                  <div className="flex items-center justify-between py-2 border-t border-hairline">
+                    <span className="text-sm text-ink">Window</span>
+                    <span className="text-sm text-muted font-mono">
+                      {notifications.quiet_hours.start} - {notifications.quiet_hours.end}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           )}

@@ -16,7 +16,7 @@ then. nautilus_trader especially is pre-2.0 — pin it and track release notes. 
 | Broker | **IBKR** via nautilus IBKR adapter | Pro (SmartRouting) or Lite ($0 comm.); behind `Broker` interface |
 | Broker connectivity | IB Gateway + IBeam | headless auth/run, containerized |
 | Historical data | Norgate / Polygon.io / Databento | survivorship-free, point-in-time incl. delisted (M2 prerequisite) |
-| Live/aux data | OpenBB ODP + IBKR/Polygon | behind `MarketDataProvider` |
+| Live/aux data | OpenBB **ODP** (open-source, self-hosted, free; AGPL — fine for personal use, revisit if multi-tenant SaaS) + IBKR/Polygon | behind `MarketDataProvider`. Use the open-source Open Data Platform, NOT OpenBB Workspace (the cloud UI/Copilot product — not needed). ODP doesn't serve data; you supply provider API keys. |
 | Validation math | own impl on numpy/scipy/pandas | DSR/PBO/walk-forward; mlfinpy/PyBroker for triangulation |
 | Market calendar | exchange_calendars / pandas-market-calendars | holidays, half-days, sessions, EOD flatten |
 | LLM gateway | LiteLLM | routes to local + hosted; tiered; with fallbacks; never in execution path |

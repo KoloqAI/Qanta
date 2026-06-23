@@ -12,8 +12,10 @@ router = APIRouter()
 
 
 class CreateDeploymentBody(BaseModel):
-    strategy_id: str
+    strategy_version_id: str
     mode: str = "paper"  # paper | live
+    guardrails: dict | None = None
+    capital_budget: float | None = None
 
 
 class PromoteBody(BaseModel):
@@ -26,9 +28,9 @@ async def create_deployment(
 ) -> dict:
     """Create a new deployment. Live mode is risk_increasing and requires
     human confirmation -- returns an error directing the user to confirm."""
-    strategy = await state.registry.get(body.strategy_id)
+    strategy = await state.registry.get(body.strategy_version_id)
     if not strategy:
-        raise HTTPException(status_code=404, detail="Strategy not found")
+        raise HTTPException(status_code=404, detail="Strategy version not found")
 
     if body.mode == "live":
         # risk_increasing: do NOT auto-deploy live
@@ -45,10 +47,11 @@ async def create_deployment(
     deployment_id = str(uuid.uuid4())
     deployment = {
         "id": deployment_id,
-        "strategy_id": body.strategy_id,
+        "strategy_version_id": body.strategy_version_id,
         "strategy_name": strategy.get("name", "Untitled"),
         "mode": "paper",
         "status": "active",
+        "capital_budget": body.capital_budget,
         "pnl": 0.0,
     }
     state.deployments[deployment_id] = deployment
@@ -61,7 +64,7 @@ async def create_deployment(
         action="deployment_created",
         subject_type="deployment",
         subject_id=deployment_id,
-        payload={"strategy_id": body.strategy_id, "mode": "paper"},
+        payload={"strategy_version_id": body.strategy_version_id, "mode": "paper"},
         user_id=user.get("id"),
     )
 

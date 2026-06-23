@@ -32,10 +32,16 @@ Evolution
 Assistant
   POST   /assistant/messages              # NL turn; returns text + grounded data + staged actions
   POST   /assistant/actions/{id}/confirm  # confirm a staged risk_increasing action
+Library & sandbox (doc 13)
+  GET    /library                         # archetypes + status
+  GET    /library/{id}                    # detail + exploration funnel
+  POST   /library/{id}/scan               # {universe?, as_of?} -> ranked candidates
+  POST   /library/{id}/explore            # {budget, param_grid?} -> job_id (ledger-tracked sweep)
+  POST   /backtest                        # {source: spec|{archetype_id,params}|strategy_version_id, tickers[], start, end, timeframe, mode} -> job_id
 Settings
   GET/PUT /settings/connections /settings/models /settings/risk
-          /settings/validation /settings/tools /settings/workflows
-          /settings/account /settings/appearance   # appearance: {theme: system|light|dark}
+          /settings/validation /settings/tools /settings/workflows /settings/portfolio
+          /settings/notifications /settings/account /settings/appearance   # appearance: {theme: system|light|dark}
 WS
   /ws/jobs/{id}   /ws/monitor   /ws/assistant
 ```
@@ -56,7 +62,7 @@ validation_reports(id pk, strategy_version_id fk, deflated_sharpe float, pbo flo
                    deg_slope float, peer_hit float, n_eff int, passed bool,
                    confidence_curve jsonb, detail jsonb, created_at)
 deployments(id pk, strategy_version_id fk, mode enum(paper,live), status, guardrails jsonb,
-            capital float, started_at, ended_at)
+            capital_budget float, started_at, ended_at)
 orders(id pk, deployment_id fk, symbol, side, qty float, type, status, ts)
 fills(id pk, order_id fk, price float, qty float, ts)
 approvals(id pk, user_id fk, strategy_version_id fk, approved bool, reason text, ts)
@@ -67,6 +73,9 @@ search_ledger(id pk, spec_hash, hypothesis_family, data_window jsonb, model_vers
 calibration(id pk, validation_report_id fk, claimed_c float, target_r float, horizon int,
             realized_outcome bool, resolved_at)           # confidence calibration
 evolution_runs(id pk, tier int, summary jsonb, meta_lockbox_result jsonb, ts)
+library_archetypes(id pk, name, family, horizon, thesis, template jsonb, scan jsonb,
+                   param_grid jsonb, source enum(seed,evolved), status, created_at)
+exploration_runs(id pk, archetype_id fk, budget_spent, trials int, survivors int, ts)
 ```
 Scope every user-owned row by `user_id` (single-user now, multi-user-ready).
 

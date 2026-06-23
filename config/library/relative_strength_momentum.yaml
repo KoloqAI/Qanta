@@ -1,0 +1,50 @@
+id: relative_strength_momentum
+name: Relative strength momentum
+family: momentum_trend
+horizon: swing
+thesis: "Buy names showing strong relative momentum vs the market; winners tend to keep winning over weeks."
+watches: [close, sma, atr, avg_volume, adx]
+
+regime:
+  all_of:
+    - { gt: ["avg_volume(20)", 500000] }
+    - { gt: ["close", "sma(50)"] }
+
+entry:
+  when:
+    all_of:
+      - { gt: ["close", "sma(20)"] }
+      - { gt: ["sma(20)", "sma(50)"] }
+  action: enter_long
+  sizing:
+    vol_scaled:
+      target_vol: 0.10
+
+exits:
+  - stop_loss:
+      atr_mult: 2.0
+  - trailing_stop:
+      atr_mult: 2.5
+  - time_stop:
+      sessions: 20
+  - regime_break_exit: true
+
+risk:
+  per_trade_stop_pct: 5.0
+  max_position_pct: 5.0
+  max_gross_exposure: 40.0
+
+param_grid:
+  fast_sma: { min: 10, max: 30, step: 5 }
+  slow_sma: { min: 40, max: 80, step: 10 }
+  stop_atr: { min: 1.5, max: 3.0, step: 0.5 }
+
+scan:
+  all_of:
+    - { gt: ["avg_volume(20)", 500000] }
+    - { gt: ["sma(20)", "sma(50)"] }
+
+peers_hint: sector_or_corr
+default_universe:
+  min_price: 5
+  min_dollar_volume: 5000000

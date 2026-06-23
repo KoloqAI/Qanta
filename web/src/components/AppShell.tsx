@@ -20,6 +20,7 @@ const NAV_GROUPS = [
     items: [
       { to: '/review', label: 'Review Queue' },
       { to: '/registry', label: 'Registry' },
+      { to: '/backtest', label: 'Backtest Sandbox' },
     ],
   },
   {
@@ -50,6 +51,7 @@ export function AppShell() {
         </div>
         <div className="flex items-center gap-4">
           <span className="text-xs text-gain">Data OK</span>
+          <span className="text-xs text-muted">Budget: --</span>
           <span className="text-xs text-muted">Kill switch: off</span>
           <span className="text-xs text-muted">{user?.email}</span>
           <button onClick={handleLogout} className="text-xs text-muted hover:text-ink">

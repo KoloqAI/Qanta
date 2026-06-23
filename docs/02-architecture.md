@@ -20,6 +20,8 @@
 - Infra: Docker + docker-compose (local); Terraform + ECS/Fargate (AWS).
 
 ## Repository file tree (target)
+(Abbreviated; `STRUCTURE.md` is the authoritative, up-to-date layout — it includes the Portfolio,
+Scheduling, and Notifications modules, the `config/` files, the `web/src` tree, `ops/ibeam/`, and `tests/`.)
 ```
 quanta/
   docker-compose.yml
@@ -122,6 +124,6 @@ deployment 1..* order; order 1..* fill; research_run 1..* version, 1..* trial; u
 
 ## Deployment & scaling
 - Local: `docker compose up` → api, worker, web, postgres, redis, ollama.
-- AWS: ALB → ECS/Fargate (api, web, workers) · RDS Postgres+Timescale · ElastiCache Redis · Secrets Manager · LLM via Ollama-on-EC2 or hosted. Terraform-provisioned.
+- AWS: ALB → ECS/Fargate (api, web, workers) · RDS Postgres (+ TimescaleDB only when volume needs it) · ElastiCache Redis · Secrets Manager · SES · IB Gateway/IBeam · LLM via Ollama-on-EC2 or hosted. Terraform-provisioned.
 - Stateless services; horizontal scale on the worker tier; execution module extractable to its own service (and its own secret scope) when isolation is wanted.
 - Indicative cost: $0–100/mo local (free data + paper); ~$100–250/mo small AWS.

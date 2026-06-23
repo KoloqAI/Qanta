@@ -28,7 +28,7 @@ Sidebar groups → screens:
 - Work: **Assistant** (also a slide-over on every screen)
 - Your Book: **Portfolio** (home/overview), **Monitor** (live ops + intervention), **Performance & History** (track record + calibration)
 - Strategies: **Review Queue** (pending approvals), **Registry** (all strategies + templates)
-- System: **Evolution** (digest + Tier-3 approvals), **Settings** (Connections, Models & Routing, Risk & Guardrails, Validation Thresholds, Tools & Modules, Workflows, **Account**)
+- System: **Evolution** (digest + Tier-3 approvals), **Settings** (Connections, Models & Routing, Risk & Guardrails, Validation Thresholds, Portfolio & Allocation, Tools & Modules, Workflows, Notifications, Appearance, **Account**)
 - Shared hub: **Strategy Detail** (state-aware: review decision when pending; live section when deployed)
 - Overlay: **Deploy Config** (modal over Strategy Detail on approve)
 
@@ -47,11 +47,13 @@ Sidebar groups → screens:
 
 **Performance & History** — portfolio results over time (realized, not backtest); all deployments past+present incl. closed/retired; realized-vs-expected per strategy; confidence calibration (do 80%s hit 80%); observability.
 
-**Registry** — browse/search all strategies across lifecycle + the template library.
+**Registry** — two tabs: **Instantiated** (browse/search all strategies across the lifecycle) and **Library** (the seed archetype catalog from doc 13 — cards grouped by family/theme with status, filter by family/horizon; archetype detail shows thesis, scan logic, param grid, exploration funnel, and actions Run scan / Explore / Author from this / Open in Sandbox).
+
+**Backtest Sandbox** — hands-on manual backtest (doc 13): pick a registry version, a library archetype + params, or a pasted DSL spec; choose ticker(s), date range, timeframe, and mode (backtest-only | full gauntlet); see equity curve, trade list, metrics (plus DSR/PBO/confidence in gauntlet mode). Can promote to Research/Registry, never to live.
 
 **Evolution** — digest of promotions/retirements; discovered survivors; Tier-3 capability proposals (approve/reject) with meta-lockbox results.
 
-**Settings** — sub-nav: Connections (broker/data), Models & Routing (LiteLLM tiers), Risk & Guardrails (global limits), Validation Thresholds (pre-registered), Tools & Modules (enable/disable, contracts), Workflows (declarative pipelines), Account (credentials, sessions, provider keys).
+**Settings** — sub-nav: Connections (broker/data), Models & Routing (LiteLLM tiers + fallbacks), Risk & Guardrails (global limits), Validation Thresholds (pre-registered), Portfolio & Allocation (method, caps, cash buffer, max strategies), Tools & Modules (enable/disable, contracts), Workflows (declarative pipelines), Notifications (channels + per-severity routing + quiet hours), Appearance (theme: system/light/dark), Account (credentials, sessions, provider keys).
 
 ## States to implement for every data screen
 empty · loading (skeleton) · partial · error/degraded · alert (kill-switch). The top bar always reflects kill-switch + data-feed state.

@@ -9,11 +9,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import auth, strategies, research, deployments
 from app.api import portfolio, performance, monitor, evolution
 from app.api import assistant, settings as settings_router, ws
+from app.api import library, backtest
 from app.config import settings
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    from app.modules.registry.library_loader import load_archetypes
+    from app.api.library import register_archetypes
+
+    archetypes = load_archetypes(validate=True)
+    register_archetypes(archetypes)
+
     yield
 
 
@@ -43,6 +50,8 @@ def create_app() -> FastAPI:
     app.include_router(evolution.router, prefix="/evolution", tags=["evolution"])
     app.include_router(assistant.router, prefix="/assistant", tags=["assistant"])
     app.include_router(settings_router.router, prefix="/settings", tags=["settings"])
+    app.include_router(library.router, prefix="/library", tags=["library"])
+    app.include_router(backtest.router, prefix="/backtest", tags=["backtest"])
     app.include_router(ws.router, prefix="/ws", tags=["websocket"])
 
     @app.get("/health")

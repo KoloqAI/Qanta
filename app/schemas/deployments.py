@@ -9,7 +9,7 @@ class DeploymentCreate(BaseModel):
     strategy_version_id: str
     mode: str = "paper"
     guardrails: dict[str, Any] | None = None
-    capital: float | None = None
+    capital_budget: float | None = None
 
 
 class DeploymentResponse(BaseModel):
@@ -17,7 +17,7 @@ class DeploymentResponse(BaseModel):
     strategy_version_id: str
     mode: str
     status: str
-    capital: float | None
+    capital_budget: float | None
     started_at: str | None
     ended_at: str | None
 

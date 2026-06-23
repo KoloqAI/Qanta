@@ -134,7 +134,7 @@ class Deployment(TimestampMixin, Base):
     mode: Mapped[DeploymentMode] = mapped_column(Enum(DeploymentMode), nullable=False)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending")
     guardrails: Mapped[dict[str, Any] | None] = mapped_column(JSON)
-    capital: Mapped[float | None] = mapped_column(Float)
+    capital_budget: Mapped[float | None] = mapped_column(Float)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     strategy_version: Mapped[StrategyVersion] = relationship(back_populates="deployments")
@@ -218,3 +218,37 @@ class EvolutionRun(Base):
     summary: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     meta_lockbox_result: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ArchetypeSource(str, enum.Enum):
+    SEED = "seed"
+    EVOLVED = "evolved"
+
+
+class LibraryArchetype(Base):
+    __tablename__ = "library_archetypes"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    family: Mapped[str] = mapped_column(String(100), nullable=False)
+    horizon: Mapped[str] = mapped_column(String(50), nullable=False)
+    thesis: Mapped[str] = mapped_column(Text, nullable=False)
+    template: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    scan: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    param_grid: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    source: Mapped[ArchetypeSource] = mapped_column(
+        Enum(ArchetypeSource), nullable=False, server_default="seed"
+    )
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="unexplored")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    exploration_runs: Mapped[list[ExplorationRun]] = relationship(back_populates="archetype")
+
+
+class ExplorationRun(Base):
+    __tablename__ = "exploration_runs"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    archetype_id: Mapped[str] = mapped_column(ForeignKey("library_archetypes.id"), nullable=False)
+    budget_spent: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    trials: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    survivors: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    archetype: Mapped[LibraryArchetype] = relationship(back_populates="exploration_runs")
