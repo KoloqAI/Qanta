@@ -58,6 +58,23 @@ Settings
   Do NOT pass the raw apiFetch promise as queryFn — always extract the payload in an async wrapper.
 WS
   /ws/jobs/{id}   /ws/monitor   /ws/assistant
+
+  /ws/jobs/{id} event vocabulary (consumed by the Registry activity feed):
+  The client normalizes raw WS messages into AG-UI-style events via `web/src/lib/jobEvents.ts`:
+    run_started    — job accepted; lifecycle begins
+    step_started   — a named step begins (label, step_id)
+    step_finished  — a step completes (status: done | failed, optional tool_result)
+    tool_result    — tool-call detail (tool_name, tool_result text)
+    progress       — incremental count update (progress: {current, total})
+    run_finished   — terminal success; may include candidates[] (Scan) or funnel{} (Explore)
+    run_error      — terminal failure (error message)
+
+  Scan emits: run_started → step events for universe filter, bar fetch, scan eval, ranking →
+    run_finished with {candidates: [{ticker, fit_score, archetype, family}], is_sample_fallback}.
+
+  Explore emits: run_started → step events per archetype/ticker/param combo → progress events
+    with live funnel counters {trials, backtested, validated, survivors} → run_finished with
+    final funnel and survivor links to Review Queue.
 ```
 
 ## Data model (column level)

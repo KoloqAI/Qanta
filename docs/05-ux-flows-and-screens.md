@@ -22,7 +22,11 @@ relax a guardrail or self-deploy.
 
 ## Screen map & navigation
 Pre-app: **Login**. App shell: persistent top bar (account mode, kill-switch status, data feed, search
-budget) + grouped left sidebar. Strategy Detail is the shared hub reached by drilling in (not a sidebar item).
+budget) pinned at top + **grouped left sidebar fixed full-height** (sticky, scrolls independently of
+content). The content area owns its own scroll region; scrolling content never moves the sidebar or top
+bar. Three independent scroll regions app-wide: **sidebar | content area** (on the Registry screen this
+further splits into **list column | detail panel**, each with independent overflow). Strategy Detail is
+the shared hub reached by drilling in (not a sidebar item).
 
 Sidebar groups → screens:
 - Work: **Assistant** (also a slide-over on every screen)
@@ -47,7 +51,33 @@ Sidebar groups → screens:
 
 **Performance & History** — portfolio results over time (realized, not backtest); all deployments past+present incl. closed/retired; realized-vs-expected per strategy; confidence calibration (do 80%s hit 80%); observability.
 
-**Registry** — two tabs: **Instantiated** (browse/search all strategies across the lifecycle) and **Library** (the seed archetype catalog from doc 13 — cards grouped by family/theme with status, filter by family/horizon; archetype detail shows thesis, scan logic, param grid, exploration funnel, and actions Run scan / Explore / Author from this / Open in Sandbox).
+**Registry** — **master-detail layout**: the left column is the list, the right column is the detail
+panel. Selection is URL-driven (`?sel=<id>&tab=...`) so it is deep-linkable and survives refresh. On
+narrow/mobile viewports the right panel becomes a full-width slide-over (Radix/shadcn Sheet pattern).
+Two tabs:
+
+- **Instantiated** — browse/search all strategy versions across the lifecycle. Clicking a row opens
+  the right panel with a state-aware summary: name, version, ticker(s), lifecycle state chip, key
+  validation metrics (DSR, PBO, peer-hit, C_lo), confidence bar, and the **state-driven action bar**
+  (draft/backtested → Run Validation; validated → Approve & Deploy / Reject; approved → Deploy Config;
+  paper → Promote / Pause / Flatten / Retire; live → Pause / Flatten / Retire). Risk-increasing actions
+  keep their stage-and-confirm step. An "Open full Strategy Detail →" link routes to the shared hub for
+  the complete view — the panel is a quick-access summary, not a replacement.
+
+- **Library** — the seed archetype catalog (doc 13). Cards grouped by family/theme, filterable by
+  family + horizon. Clicking a card opens the right panel with archetype detail: full thesis, watched
+  features, human-readable scan logic, param grid, exploration funnel
+  (runs → trials → survivors), status/exclusion_reason, and the four actions **Run scan / Explore /
+  Author from this / Open in Sandbox**.
+
+The **lower region of the right panel** is a real-time **activity feed** (AG-UI-style event stream).
+When the user clicks Scan or Explore, the panel subscribes to `/ws/jobs/{job_id}` and renders streamed
+events as an ordered chronological step list: status icon, label, timestamp, optional progress count,
+collapsible tool-call detail. For Explore, the exploration funnel counters (trials → backtested →
+validated → survivors) update live and survivors link to the Review Queue. For Scan, candidates render
+on completion with the `is_sample_fallback` banner when applicable. The info section, action bar, and
+activity feed are three independent scroll regions within the panel — the action bar stays pinned so it
+is never pushed off-screen. WS reconnect is handled with a degraded state banner.
 
 **Backtest Sandbox** — hands-on manual backtest (doc 13): pick a registry version, a library archetype + params, or a pasted DSL spec; choose ticker(s), date range, timeframe, and mode (backtest-only | full gauntlet); see equity curve, trade list, metrics (plus DSR/PBO/confidence in gauntlet mode). Can promote to Research/Registry, never to live.
 
@@ -56,4 +86,6 @@ Sidebar groups → screens:
 **Settings** — sub-nav: Connections (broker/data), Models & Routing (LiteLLM tiers + fallbacks), Risk & Guardrails (global limits), Validation Thresholds (pre-registered), Portfolio & Allocation (method, caps, cash buffer, max strategies), Tools & Modules (enable/disable, contracts), Workflows (declarative pipelines), Notifications (channels + per-severity routing + quiet hours), Appearance (theme: system/light/dark), Account (credentials, sessions, provider keys).
 
 ## States to implement for every data screen
-empty · loading (skeleton) · partial · error/degraded · alert (kill-switch). The top bar always reflects kill-switch + data-feed state.
+empty · loading (skeleton) · partial · error/degraded · alert (kill-switch). The top bar always reflects
+kill-switch + data-feed state. The **activity feed** adds streaming · done · error · reconnecting states
+within the detail panel; WS reconnect shows a degraded banner and resubscribes to the same `job_id`.

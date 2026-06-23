@@ -124,17 +124,28 @@ regardless of how many param configs the grid produces. PBO measures within-fami
 DSR deflates across families. Orthogonal, no double-counting.
 
 ## 2. Library / Explore UI (extends the Registry screen)
-Registry gains two tabs: **Instantiated** (today's registry: all strategies across the lifecycle) and
-**Library** (the archetype catalog).
+Registry has two tabs: **Instantiated** (all strategies across the lifecycle) and **Library** (the
+archetype catalog), presented in a **master-detail layout**: the left column is the list/cards, the
+right column is a docked detail panel (mobile: full-width slide-over). Selection is URL-driven.
+
 - **Library view:** archetype cards grouped by family/theme; filter by family + horizon. Each card shows
   name, thesis (one line), watched features, horizon, and status: `unexplored` / `explored` /
   `has-survivors (n)` / `has-live` / `excluded` (with `exclusion_reason`). An `excluded` archetype
   failed load-time param binding validation — it won't appear in sweeps until the YAML is fixed.
   Surfaces the universe of themes at a glance.
-- **Archetype detail:** full thesis, watched features, the scan logic (human-readable), the param grid, and
-  the exploration funnel for it (trials → backtested → validated → survivors, pulled from the ledger).
-  Actions: **Run scan** (surface candidate tickers now), **Explore** (queue the aggressive sweep for this
-  archetype, budget-aware), **Author from this** (seed the research agent), **Open in Sandbox** (#3).
+- **Archetype detail (right panel):** full thesis, watched features, the scan logic (human-readable),
+  the param grid, and the exploration funnel for it (trials → backtested → validated → survivors, pulled
+  from the ledger). Actions: **Run scan** (surface candidate tickers now), **Explore** (queue the
+  aggressive sweep for this archetype, budget-aware), **Author from this** (seed the research agent),
+  **Open in Sandbox** (#3).
+- **Scan and Explore stream live job activity (AG-UI-style)** into the panel's bottom activity feed.
+  Both endpoints return a `job_id`; the client subscribes to `/ws/jobs/{job_id}` via the ws client
+  (`web/src/lib/ws.ts`) and normalizes events through `web/src/lib/jobEvents.ts` into lifecycle +
+  tool-call semantics (run_started → step_started/finished → run_finished/error). For Explore, the
+  exploration funnel counters (trials → backtested → validated → survivors) update in real time; on
+  completion, survivors link into the Review Queue. For Scan, candidates render ranked on completion;
+  the `is_sample_fallback` banner shows when no real provider is configured. The info section, action
+  bar, and activity feed are independent scroll regions — the action bar stays pinned.
 - Read/scan/backtest are agent-free reads; nothing here deploys.
 
 ## 3. Backtest Sandbox (new screen) + ad-hoc backtest endpoint

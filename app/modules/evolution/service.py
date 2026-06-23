@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import itertools
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Protocol
 
 import numpy as np
@@ -142,6 +143,7 @@ class EvolutionLoopImpl:
         self._discoveries: list[dict] = []
         self._proposals: list[dict] = []
         self._n_eff: int = 0  # total trials run across T2 rounds (DSR deflation)
+        self._ledger: list[dict] = []
         self._meta_lockbox: dict[str, Any] = {"status": "not_evaluated"}
         self._pre_change_sharpe: float | None = None
 
@@ -246,151 +248,218 @@ class EvolutionLoopImpl:
     # T2 — Budgeted Discovery
     # ------------------------------------------------------------------
 
-    async def run_tier2(self, budget: int) -> dict:
-        """Budgeted discovery — compose, sweep, and validate new strategies.
+    async def run_tier2(
+        self,
+        budget: int,
+        archetype_subset: list[str] | None = None,
+        as_of: datetime | None = None,
+        candidates_per_archetype: int = 3,
+    ) -> dict:
+        """Budgeted discovery — scan per archetype, sweep param grids, validate.
 
-        1. Scan for candidates using ShortTermEquityDomain
-        2. Compose base specs using StrategyAuthorImpl
-        3. Generate param-grid variants from the archetype's declared grid
-           (entry lookbacks, thresholds, stop multipliers — the real search space)
-        4. Backtest all variants, build T×N competing-returns matrix
-        5. Select IS-best config as the winner
-        6. Validate winner with competing_returns → real multi-config PBO
-        7. n_eff counts hypothesis families (one per ticker), NOT individual
-           param variants — PBO measures within-family selection-overfitting,
-           DSR deflates across families.  Orthogonal, no double-counting.
+        Iterates over library archetypes (not a generic domain scan), runs
+        ``scan_universe()`` per archetype to find candidate tickers, fills
+        archetype template with ticker + param_grid combos, backtests all
+        variants, and validates the IS-best winner with multi-config PBO.
+
+        n_eff counts hypothesis families (one per ticker/archetype), NOT
+        individual param variants — PBO measures within-family selection-
+        overfitting, DSR deflates across families.  Orthogonal, no double-
+        counting.
+
+        Every trial is logged to ``self._ledger``; survivors are registered
+        in ``self._registry`` so they appear in the Review Queue.
         """
-        from app.modules.research.service import ShortTermEquityDomain, StrategyAuthorImpl
         from app.core.dsl.parser import parse_spec
         from app.modules.backtest.service import BacktesterImpl
         from app.modules.validation.service import ValidationHarnessImpl, _load_validation_config
-        from app.modules.data.providers import create_data_provider, recent_window
+        from app.modules.data.providers import (
+            create_data_provider, recent_window, scan_universe, SampleDataProvider,
+        )
         from app.modules.registry.library_loader import load_archetypes
 
         survivors: list[dict] = []
         trials_run = 0
+        run_ledger: list[dict] = []
 
-        domain = ShortTermEquityDomain()
-        author = StrategyAuthorImpl()
         harness = ValidationHarnessImpl()
         provider = create_data_provider()
         bt = BacktesterImpl()
+        is_sample_provider = isinstance(provider, SampleDataProvider)
 
         val_config = _load_validation_config()
         max_configs = val_config.get("pbo", {}).get("max_configs", 20)
-        archetypes = load_archetypes(validate=False)
+        archetypes = load_archetypes(validate=True)
 
-        candidates = await domain.scan("short-term momentum and mean-reversion", {})
+        active = {
+            aid: a for aid, a in archetypes.items()
+            if a.get("status") != "excluded"
+            and (archetype_subset is None or aid in archetype_subset)
+        }
 
-        for candidate in candidates:
+        if as_of is None:
+            as_of_dt = datetime.utcnow() - timedelta(days=1)
+        else:
+            as_of_dt = as_of
+
+        families_seen: dict[str, int] = {}
+
+        for archetype_id, archetype in active.items():
             if trials_run >= budget:
                 break
 
-            ticker = candidate.get("ticker", "AAPL")
+            family = archetype.get("family", "unknown")
+            scan_result = await scan_universe(archetype, as_of=as_of_dt)
+            candidates = scan_result["candidates"]
 
-            spec_raw = await author.author(
-                f"Short-term opportunity in {ticker}",
-                {"ticker": ticker},
-            )
+            for candidate in candidates[:candidates_per_archetype]:
+                if trials_run >= budget:
+                    break
 
-            parse_result = parse_spec(spec_raw)
-            if not parse_result.success:
-                trials_run += 1
+                ticker = candidate["ticker"]
+
+                # Inject ticker into archetype template
+                template = copy.deepcopy(archetype["template"])
+                template["tickers"] = [ticker]
+                template.setdefault("universe", {})
+                if isinstance(template["universe"], dict):
+                    template["universe"]["primary"] = ticker
+                template.setdefault("validation", {"targets": [{"R": 0.02, "H": 7}]})
+
+                # Build param-grid variants from archetype template
+                grid = archetype.get("param_grid", {})
+                if grid:
+                    variants = _build_archetype_variants(template, grid, max_configs)
+                else:
+                    variants = [_fill_placeholders(template, {})]
+
+                val_start, val_end = recent_window(700)
+                bars = await provider.bars(ticker, val_start, val_end)
+                if bars.empty or len(bars) < 50:
+                    trials_run += 1
+                    self._n_eff += 1
+                    families_seen[family] = families_seen.get(family, 0) + 1
+                    continue
+
+                all_returns: list[np.ndarray] = []
+                valid_specs: list[Any] = []
+                valid_raws: list[dict] = []
+
+                for var_raw in variants:
+                    var_parse = parse_spec(var_raw)
+                    if not var_parse.success:
+                        continue
+                    try:
+                        result = await bt.run(var_parse.spec, bars)
+                        equities = [e["equity"] for e in result.equity_curve]
+                        if len(equities) > 1:
+                            rets = np.diff(equities) / np.array(equities[:-1], dtype=float)
+                            all_returns.append(rets)
+                            valid_specs.append(var_parse.spec)
+                            valid_raws.append(var_raw)
+                    except Exception:
+                        continue
+
+                # Build competing-returns matrix (T×N), dedup identical columns
+                competing_returns: np.ndarray | None = None
+                n_configs_distinct = len(all_returns)
+                if len(all_returns) >= 2:
+                    min_t = min(len(r) for r in all_returns)
+                    raw_matrix = np.column_stack([r[:min_t] for r in all_returns])
+                    seen_cols: dict[bytes, int] = {}
+                    unique_indices: list[int] = []
+                    for j in range(raw_matrix.shape[1]):
+                        key = raw_matrix[:, j].tobytes()
+                        if key not in seen_cols:
+                            seen_cols[key] = j
+                            unique_indices.append(j)
+                    n_configs_distinct = len(unique_indices)
+                    if n_configs_distinct >= 2:
+                        competing_returns = raw_matrix[:, unique_indices]
+
+                # Select winner: best Sharpe across variants
+                if valid_specs:
+                    sharpes = [
+                        float(np.mean(r) / np.std(r)) if np.std(r) > 0 else 0.0
+                        for r in all_returns
+                    ]
+                    winner_idx = int(np.argmax(sharpes))
+                    winner_spec = valid_specs[winner_idx]
+                    winner_raw = valid_raws[winner_idx]
+                    winner_sharpe = sharpes[winner_idx]
+                else:
+                    trials_run += 1
+                    self._n_eff += 1
+                    families_seen[family] = families_seen.get(family, 0) + 1
+                    continue
+
+                # n_eff counts families (one per ticker/archetype), not param variants
                 self._n_eff += 1
-                continue
+                trials_run += 1
+                families_seen[family] = families_seen.get(family, 0) + 1
 
-            val_start, val_end = recent_window(700)
-            bars = await provider.bars(ticker, val_start, val_end)
-
-            # Resolve archetype template + param_grid for this candidate
-            archetype_id = candidate.get("archetype", "")
-            archetype = archetypes.get(archetype_id, {})
-            if archetype.get("status") == "excluded":
-                archetype = {}
-            archetype_grid = archetype.get("param_grid") or None
-            archetype_template = archetype.get("template") if archetype_grid else None
-
-            variants = self._generate_param_grid(
-                archetype_template or spec_raw,
-                n_variants=max_configs,
-                archetype_grid=archetype_grid,
-            )
-            all_returns: list[np.ndarray] = []
-            valid_specs: list[Any] = []
-            valid_raws: list[dict] = []
-
-            for var_raw in variants:
-                var_parse = parse_spec(var_raw)
-                if not var_parse.success:
-                    continue
-                try:
-                    result = await bt.run(var_parse.spec, bars)
-                    equities = [e["equity"] for e in result.equity_curve]
-                    if len(equities) > 1:
-                        rets = np.diff(equities) / np.array(equities[:-1], dtype=float)
-                        all_returns.append(rets)
-                        valid_specs.append(var_parse.spec)
-                        valid_raws.append(var_raw)
-                except Exception:
-                    continue
-
-            # Build competing-returns matrix (T×N), dedup identical columns
-            competing_returns: np.ndarray | None = None
-            n_configs_distinct = len(all_returns)
-            if len(all_returns) >= 2:
-                min_t = min(len(r) for r in all_returns)
-                raw_matrix = np.column_stack([r[:min_t] for r in all_returns])
-                # Dedupe identical return columns
-                seen_cols: dict[bytes, int] = {}
-                unique_indices: list[int] = []
-                for j in range(raw_matrix.shape[1]):
-                    key = raw_matrix[:, j].tobytes()
-                    if key not in seen_cols:
-                        seen_cols[key] = j
-                        unique_indices.append(j)
-                n_configs_distinct = len(unique_indices)
-                if n_configs_distinct >= 2:
-                    competing_returns = raw_matrix[:, unique_indices]
-
-            # Select winner: best Sharpe across variants
-            if valid_specs:
-                sharpes = [
-                    float(np.mean(r) / np.std(r)) if np.std(r) > 0 else 0.0
-                    for r in all_returns
-                ]
-                winner_idx = int(np.argmax(sharpes))
-                winner_spec = valid_specs[winner_idx]
-                winner_raw = valid_raws[winner_idx]
-            else:
-                winner_spec = parse_result.spec
-                winner_raw = spec_raw
-
-            # n_eff counts families (one per ticker), not param variants
-            self._n_eff += 1
-            trials_run += 1
-
-            try:
-                report = await harness.validate(
-                    winner_spec, bars,
-                    n_eff=self._n_eff,
-                    competing_returns=competing_returns,
-                )
-            except Exception:
-                continue
-
-            if report.passed:
-                discovery = {
+                # Log to search ledger
+                ledger_entry = {
+                    "spec_hash": hashlib.md5(
+                        json.dumps(winner_raw, sort_keys=True, default=str).encode()
+                    ).hexdigest(),
+                    "hypothesis_family": family,
+                    "archetype_id": archetype_id,
                     "ticker": ticker,
-                    "spec": winner_raw,
-                    "deflated_sharpe": report.deflated_sharpe,
-                    "pbo": report.pbo,
                     "n_configs_swept": len(valid_specs),
                     "n_configs_distinct": n_configs_distinct,
-                    "n_eff_at_discovery": self._n_eff,
+                    "winner_sharpe": round(winner_sharpe, 4),
+                    "is_sample_fallback": is_sample_provider,
+                    "validation_passed": None,
+                    "failed_gates": [],
                     "ts": datetime.utcnow().isoformat(),
                 }
-                survivors.append(discovery)
-                self._discoveries.append(discovery)
+                run_ledger.append(ledger_entry)
+                self._ledger.append(ledger_entry)
+
+                try:
+                    report = await harness.validate(
+                        winner_spec, bars,
+                        n_eff=self._n_eff,
+                        competing_returns=competing_returns,
+                    )
+                except Exception:
+                    ledger_entry["validation_passed"] = False
+                    ledger_entry["failed_gates"] = ["validation_error"]
+                    continue
+
+                gate_results = report.detail.get("gates", {})
+                failed_gates = [g for g, ok in gate_results.items() if not ok]
+                ledger_entry["validation_passed"] = report.passed
+                ledger_entry["failed_gates"] = failed_gates
+
+                if report.passed:
+                    strategy_id = None
+                    if self._registry:
+                        strategy = await self._registry.create(winner_raw, "system")
+                        strategy_id = strategy["id"]
+                        await self._registry.update_state(
+                            strategy_id, winner_raw.get("version", 1), "validated"
+                        )
+
+                    discovery = {
+                        "ticker": ticker,
+                        "archetype_id": archetype_id,
+                        "family": family,
+                        "spec": winner_raw,
+                        "strategy_id": strategy_id,
+                        "deflated_sharpe": report.deflated_sharpe,
+                        "pbo": report.pbo,
+                        "peer_hit": report.peer_hit,
+                        "n_configs_swept": len(valid_specs),
+                        "n_configs_distinct": n_configs_distinct,
+                        "n_eff_at_discovery": self._n_eff,
+                        "gates_version": report.gates_version,
+                        "failed_gates": [],
+                        "ts": datetime.utcnow().isoformat(),
+                    }
+                    survivors.append(discovery)
+                    self._discoveries.append(discovery)
 
         return {
             "tier": 2,
@@ -398,7 +467,10 @@ class EvolutionLoopImpl:
             "trials_run": trials_run,
             "survivors": survivors,
             "n_eff": self._n_eff,
-            "summary": f"T2: {trials_run}/{budget} trials, {len(survivors)} survivors",
+            "families_seen": families_seen,
+            "ledger": run_ledger,
+            "is_sample_fallback": is_sample_provider,
+            "summary": f"T2: {trials_run}/{budget} trials, {len(survivors)} survivors, n_eff={self._n_eff}",
         }
 
     # ------------------------------------------------------------------
@@ -514,4 +586,9 @@ class EvolutionLoopImpl:
             "proposals": self._proposals,
             "meta_lockbox": self._meta_lockbox,
             "n_eff": self._n_eff,
+            "ledger_count": len(self._ledger),
         }
+
+    def get_ledger(self) -> list[dict]:
+        """Return the search ledger entries recorded during T2 runs."""
+        return list(self._ledger)

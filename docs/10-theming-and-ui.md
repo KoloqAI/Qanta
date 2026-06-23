@@ -46,7 +46,11 @@ a confidence as a bare triumphant number.
 Stat card (mono value, muted label) · panel (hairline border, radius-lg) · pill/status chip · segmented
 control · metric grid · nav rail (grouped) · top status bar (mode, kill-switch, data feed, search budget) ·
 metric pass-chips · red-team list · decision bar (reason + reject + approve) · assistant message + tool-call
-chip + staged-action confirm card · equity/price chart (lightweight-charts) · analytics charts (Recharts).
+chip + staged-action confirm card · equity/price chart (lightweight-charts) · analytics charts (Recharts) ·
+**master-detail panel** (list + docked right panel with URL-driven selection; mobile slide-over variant) ·
+**agent/job activity feed** (step stream) — ordered chronological step list with status icon, label,
+timestamp, optional progress count, and collapsible tool-call detail; reuses the tool-call-chip pattern
+from the Assistant screen; renders AG-UI-style events from `/ws/jobs/{id}`.
 
 ## States (every data view)
 empty (an invitation to act) · loading (skeleton) · partial · error/degraded (says what happened + how to
@@ -56,3 +60,7 @@ by what the user controls. The button that says "Approve" produces a toast that 
 ## Quality floor
 Responsive to mobile; visible keyboard focus rings; `prefers-reduced-motion` respected; all displayed
 numbers rounded; no hardcoded colors in components — only tokens, so the theme toggle works everywhere.
+**Independent scroll regions / sticky sidebar**: the app shell uses a viewport-height flex layout
+(`h-dvh`) with `min-h-0` on flex children so the sidebar, list column, and detail panel each have their
+own `overflow-y:auto` — scrolling one never moves the others. AG-UI-style event rendering in the
+activity feed reuses the tool-call-chip pattern (status icon + label + detail).

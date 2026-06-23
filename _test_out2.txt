@@ -1,0 +1,37 @@
+============================= test session starts =============================
+platform win32 -- Python 3.14.5, pytest-8.4.2, pluggy-1.6.0 -- C:\Program Files\Python314\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\vipkaushik\OneDrive - Apollo Management L.P\Documents\Workspace\Qanta
+configfile: pyproject.toml
+plugins: anyio-4.14.0, langsmith-0.9.0, asyncio-0.26.0, cov-5.0.0
+asyncio: mode=Mode.AUTO, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 26 items
+
+tests/integration/test_exploration_e2e.py::TestPreflight::test_sample_data_provider_active PASSED [  3%]
+tests/integration/test_exploration_e2e.py::TestPreflight::test_archetypes_load_without_exclusions PASSED [  7%]
+tests/integration/test_exploration_e2e.py::TestPreflight::test_archetype_templates_parse_after_fill PASSED [ 11%]
+tests/integration/test_exploration_e2e.py::TestPreflight::test_scan_returns_candidates PASSED [ 15%]
+tests/integration/test_exploration_e2e.py::TestT2Cycle::test_trials_run_within_budget PASSED [ 19%]
+tests/integration/test_exploration_e2e.py::TestT2Cycle::test_ledger_populated PASSED [ 23%]
+tests/integration/test_exploration_e2e.py::TestT2Cycle::test_ledger_has_hypothesis_family PASSED [ 26%]
+tests/integration/test_exploration_e2e.py::TestT2Cycle::test_n_configs_distinct_gt_1 PASSED [ 30%]
+tests/integration/test_exploration_e2e.py::TestT2Cycle::test_n_configs_swept_gt_1 PASSED [ 34%]
+tests/integration/test_exploration_e2e.py::TestT2Cycle::test_families_seen_matches_archetypes PASSED [ 38%]
+tests/integration/test_exploration_e2e.py::TestT2Cycle::test_is_sample_fallback PASSED [ 42%]
+tests/integration/test_exploration_e2e.py::TestT2Cycle::test_instance_ledger_matches PASSED [ 46%]
+tests/integration/test_exploration_e2e.py::TestT2Cycle::test_n_eff_equals_trials_run PASSED [ 50%]
+tests/integration/test_exploration_e2e.py::TestDeflation::test_dsr_bar_rises_with_n_eff PASSED [ 53%]
+tests/integration/test_exploration_e2e.py::TestDeflation::test_n_eff_increments_per_family_not_per_config PASSED [ 57%]
+tests/integration/test_exploration_e2e.py::TestDeflation::test_budget_cap_pauses_exploration PASSED [ 61%]
+tests/integration/test_exploration_e2e.py::TestSurvivorSurfacing::test_zero_survivors_is_honest_suppression PASSED [ 65%]
+tests/integration/test_exploration_e2e.py::TestSurvivorSurfacing::test_survivors_have_gates_version_3 PASSED [ 69%]
+tests/integration/test_exploration_e2e.py::TestSurvivorSurfacing::test_survivors_registered_in_registry PASSED [ 73%]
+tests/integration/test_exploration_e2e.py::TestSurvivorSurfacing::test_digest_reflects_run PASSED [ 76%]
+tests/integration/test_exploration_e2e.py::TestStalenessGate::test_approve_rejects_stale_report PASSED [ 80%]
+tests/integration/test_exploration_e2e.py::TestStalenessGate::test_approve_succeeds_with_current_gates PASSED [ 84%]
+tests/integration/test_exploration_e2e.py::TestDeterminism::test_two_runs_produce_identical_results PASSED [ 88%]
+tests/integration/test_exploration_e2e.py::TestApproveDeployPath::test_discovered_strategy_through_approve_paper SKIPPED [ 92%]
+tests/integration/test_exploration_e2e.py::TestArchetypeTemplateSizing::test_nested_fixed_pct_sizing PASSED [ 96%]
+tests/integration/test_exploration_e2e.py::TestArchetypeTemplateSizing::test_nested_vol_scaled_sizing PASSED [100%]
+
+================== 25 passed, 1 skipped in 85.42s (0:01:25) ===================

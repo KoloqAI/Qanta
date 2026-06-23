@@ -42,9 +42,9 @@ export function AppShell() {
   }
 
   return (
-    <div className="min-h-screen bg-paper flex flex-col">
-      {/* Top status bar */}
-      <header className="sticky top-0 z-50 flex items-center justify-between border-b border-hairline bg-surface px-4 py-2">
+    <div className="h-dvh bg-paper flex flex-col overflow-hidden">
+      {/* Top status bar — pinned at top */}
+      <header className="shrink-0 z-50 flex items-center justify-between border-b border-hairline bg-surface px-4 py-2">
         <div className="flex items-center gap-4">
           <span className="font-display text-sm text-ink font-medium">Quanta</span>
           <span className="text-xs text-muted">Paper</span>
@@ -60,8 +60,8 @@ export function AppShell() {
         </div>
       </header>
 
-      <div className="flex flex-1">
-        {/* Sidebar */}
+      <div className="flex flex-1 min-h-0">
+        {/* Sidebar — fixed full-height, scrolls independently */}
         <nav className="w-52 shrink-0 border-r border-hairline bg-surface py-4 px-3 space-y-5 overflow-y-auto">
           {NAV_GROUPS.map(group => (
             <div key={group.label}>
@@ -74,7 +74,7 @@ export function AppShell() {
                   to={item.to}
                   className={({ isActive }) =>
                     cn(
-                      'block rounded px-2 py-1.5 text-sm transition-colors',
+                      'block rounded px-2 py-1.5 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-indigo',
                       isActive
                         ? 'bg-indigo-soft text-indigo font-medium'
                         : 'text-muted hover:text-ink hover:bg-inset'
@@ -88,8 +88,8 @@ export function AppShell() {
           ))}
         </nav>
 
-        {/* Main content */}
-        <main className="flex-1 overflow-y-auto">
+        {/* Main content — scrolls independently */}
+        <main className="flex-1 min-h-0 overflow-y-auto">
           <Outlet />
         </main>
       </div>

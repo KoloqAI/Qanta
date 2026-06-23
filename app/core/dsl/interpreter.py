@@ -369,9 +369,13 @@ def _compute_sizing(
     sizing = spec.entry.get("sizing", {})
     if "fixed_pct" in sizing:
         pct = sizing["fixed_pct"]
+        if isinstance(pct, dict):
+            pct = pct.get("pct", 5.0)
         result["position_size_pct"] = np.where(result["signal"] != 0, pct, 0.0)
     elif "vol_scaled" in sizing:
         target_vol = sizing["vol_scaled"]
+        if isinstance(target_vol, dict):
+            target_vol = target_vol.get("target_vol", 0.10)
         vol = features.get("realized_vol(20)")
         if vol is None:
             from app.modules.data.features import FeatureComputer as fc
