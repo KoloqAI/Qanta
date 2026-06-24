@@ -27,7 +27,10 @@ export function useJobStream(jobId: string | null) {
     const sub = subscribeWs(
       `/ws/jobs/${jobId}`,
       (raw) => {
-        const event = normalizeJobEvent(raw as Record<string, unknown>)
+        console.debug('[useJobStream] raw frame:', raw)
+        const rawObj = raw as Record<string, unknown>
+        if (rawObj.type === 'heartbeat') return
+        const event = normalizeJobEvent(rawObj)
         setEvents(prev => [...prev, event])
         if (event.type === 'run_started') setStatus('streaming')
         if (event.type === 'run_finished') {

@@ -36,8 +36,17 @@ export interface JobEvent {
   funnel?: ExplorationFunnel
 }
 
+const KNOWN_TYPES: ReadonlySet<string> = new Set<string>([
+  'run_started', 'step_started', 'step_finished',
+  'tool_result', 'progress', 'run_finished', 'run_error',
+  'heartbeat',
+])
+
 export function normalizeJobEvent(raw: Record<string, unknown>): JobEvent {
   const type = (raw.type ?? raw.event ?? 'progress') as JobEventType
+  if (!KNOWN_TYPES.has(type)) {
+    console.warn('[normalizeJobEvent] unmapped event type:', type, raw)
+  }
   return {
     type,
     step_id: raw.step_id as string | undefined,

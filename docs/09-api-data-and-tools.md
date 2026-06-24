@@ -72,10 +72,11 @@ WS
   Scan emits: run_started → step events for universe filter, bar fetch, scan eval, ranking →
     run_finished with {candidates: [{ticker, fit_score, archetype, family}], is_sample_fallback}.
 
-  Explore emits: run_started → step events per archetype/ticker/param combo → progress events →
-    run_finished with result {trials_run, survivors[], n_eff, ledger[], families_seen,
-    is_sample_fallback}. Funnel counters (trials → validated → survivors) are derived from the
-    ledger post-hoc by the UI, not streamed as live counters.
+  Explore (task ``run_explore``) emits: run_started → step_started/step_finished pairs for
+    universe scan, per-ticker backtest, and per-ticker validate → progress events carrying a live
+    funnel ``{trials, backtested, validated, survivors}`` → run_finished with final funnel +
+    survivor links. Funnel counters are streamed as live ``progress`` events (field: ``funnel``)
+    so the activity feed can update in real time.
 ```
 
 ## Data model (column level)

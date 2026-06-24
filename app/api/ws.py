@@ -13,24 +13,44 @@ router = APIRouter()
 
 @router.websocket("/jobs/{job_id}")
 async def ws_job(websocket: WebSocket, job_id: str) -> None:
-    """WebSocket for job progress updates. Sends periodic heartbeats
-    and job status until the connection closes."""
+    """WebSocket for job progress updates.
+
+    When an event buffer exists for *job_id* (created by the explore
+    endpoint before the task is spawned), subscribes to the in-process
+    event bus and relays every event to the client.  Falls back to
+    heartbeat-only mode for legacy jobs that don't publish events.
+    """
     await websocket.accept()
     try:
-        tick = 0
-        while True:
-            await websocket.send_json({
-                "type": "heartbeat",
-                "job_id": job_id,
-                "tick": tick,
-                "ts": datetime.utcnow().isoformat(),
-            })
-            tick += 1
-            # Check for incoming messages (non-blocking with timeout)
-            try:
-                await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
-            except asyncio.TimeoutError:
-                pass
+        from app.workers.job_events import has_job, iter_events, cleanup_job
+
+        if has_job(job_id):
+            async for event in iter_events(job_id):
+                if event is None:
+                    await websocket.send_json({
+                        "type": "heartbeat",
+                        "job_id": job_id,
+                        "ts": datetime.utcnow().isoformat(),
+                    })
+                else:
+                    await websocket.send_json(event)
+                    if event.get("type") in ("run_finished", "run_error"):
+                        break
+            cleanup_job(job_id)
+        else:
+            tick = 0
+            while True:
+                await websocket.send_json({
+                    "type": "heartbeat",
+                    "job_id": job_id,
+                    "tick": tick,
+                    "ts": datetime.utcnow().isoformat(),
+                })
+                tick += 1
+                try:
+                    await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    pass
     except WebSocketDisconnect:
         pass
 

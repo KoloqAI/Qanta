@@ -10,6 +10,7 @@ from app.workers.tasks import (
     run_validation,
     run_evolution_tier1,
     run_evolution_tier2,
+    run_explore,
 )
 
 
@@ -28,6 +29,7 @@ class WorkerSettings:
         run_validation,
         run_evolution_tier1,
         run_evolution_tier2,
+        run_explore,
     ]
     on_startup = startup
     on_shutdown = shutdown

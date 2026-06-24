@@ -118,6 +118,10 @@ async def explore_archetype(
 ) -> dict:
     """Queue an exploration sweep for this archetype.
     Budget-governed, ledger-tracked. Returns a job_id."""
+    import asyncio
+    from app.workers.tasks import run_explore
+    from app.workers.job_events import init_job
+
     a = _archetypes.get(archetype_id)
     if not a:
         raise HTTPException(status_code=404, detail="Archetype not found")
@@ -133,6 +137,17 @@ async def explore_archetype(
         "status": "queued",
     }
     _exploration_runs.setdefault(archetype_id, []).append(run)
+
+    init_job(job_id)
+
+    asyncio.create_task(run_explore(
+        ctx={},
+        job_id=job_id,
+        archetype_id=archetype_id,
+        budget=body.budget,
+        param_grid=body.param_grid or a.get("param_grid", {}),
+        registry=state.registry,
+    ))
 
     await state.audit_log.log(
         actor="system",
