@@ -16,7 +16,7 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-GATES_VERSION = 3  # bumped: v3 = explicit {param} placeholder binding (no-op params fixed)
+GATES_VERSION = 4  # v4 = persistence-thesis gate (archetype-eligibility rule change)
 
 
 def _load_validation_config() -> dict[str, Any]:
@@ -423,7 +423,7 @@ class ValidationHarnessImpl:
 
 
 def invalidate_stale_reports(reports: dict[str, dict]) -> int:
-    """Mark in-memory validation reports that predate the peer-hit gate.
+    """Mark in-memory validation reports that predate the current gate set.
 
     Reports with gates_version < GATES_VERSION get passed=False and a
     stale_reason. Returns the count of invalidated reports.
@@ -433,8 +433,8 @@ def invalidate_stale_reports(reports: dict[str, dict]) -> int:
         if report.get("gates_version", 0) < GATES_VERSION:
             report["passed"] = False
             report["stale_reason"] = (
-                f"Report predates gates_version {GATES_VERSION} "
-                "(peer_hit gate added); re-validate to clear."
+                f"Report predates gates_version {GATES_VERSION}; "
+                "re-validate to clear."
             )
             count += 1
     if count:

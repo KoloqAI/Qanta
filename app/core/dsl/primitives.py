@@ -52,10 +52,15 @@ FEATURE_PRIMITIVES: dict[str, PrimitiveSignature] = {
     "time_of_day": PrimitiveSignature("time_of_day", [], DSLType.SERIES),
     "session_phase": PrimitiveSignature("session_phase", [], DSLType.SERIES),
     "days_to_event": PrimitiveSignature("days_to_event", [("kind", DSLType.SCALAR)], DSLType.SERIES),
+    "is_index_add": PrimitiveSignature("is_index_add", [], DSLType.SERIES),
+    "is_index_delete": PrimitiveSignature("is_index_delete", [], DSLType.SERIES),
 }
+
+DSL_VOCABULARY_VERSION = 2
 
 # Condition primitives catalog
 CONDITION_PRIMITIVES: dict[str, PrimitiveSignature] = {
+    "eq": PrimitiveSignature("eq", [("a", DSLType.SERIES), ("b", DSLType.SERIES)], DSLType.BOOL),
     "gt": PrimitiveSignature("gt", [("a", DSLType.SERIES), ("b", DSLType.SERIES)], DSLType.BOOL),
     "lt": PrimitiveSignature("lt", [("a", DSLType.SERIES), ("b", DSLType.SERIES)], DSLType.BOOL),
     "between": PrimitiveSignature("between", [("a", DSLType.SERIES), ("lo", DSLType.SCALAR), ("hi", DSLType.SCALAR)], DSLType.BOOL),

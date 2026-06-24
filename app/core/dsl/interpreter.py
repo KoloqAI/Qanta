@@ -64,10 +64,17 @@ def _resolve_value(ref: Any, features: dict[str, Any], bars: pd.DataFrame) -> An
     """Resolve a DSL reference to a concrete Series or scalar."""
     if isinstance(ref, (int, float)):
         return ref
+    if isinstance(ref, bool):
+        return ref
     if isinstance(ref, str):
         # Direct column reference
         if ref in ("close", "open", "high", "low", "volume"):
             return bars[ref]
+        # Event feature shorthand (no-arg features read from enriched bars)
+        if ref == "is_index_add" and "_is_index_add" in bars.columns:
+            return bars["_is_index_add"]
+        if ref == "is_index_delete" and "_is_index_delete" in bars.columns:
+            return bars["_is_index_delete"]
         # Feature reference like "sma(20)" or "rsi(14)"
         if ref in features:
             return features[ref]
@@ -183,6 +190,23 @@ def _compute_features(spec: StrategySpec, bars: pd.DataFrame) -> dict[str, Any]:
             features[ref] = fc.vwap(bars["close"], bars["volume"], w)
         elif name == "dollar_volume":
             features[ref] = fc.dollar_volume(bars["close"], bars["volume"])
+        elif name == "days_to_event" and len(args) >= 1:
+            kind = str(args[0])
+            col = f"_days_to_{kind}"
+            if col in bars.columns:
+                features[ref] = bars[col]
+            else:
+                features[ref] = pd.Series(np.nan, index=bars.index)
+        elif name == "is_index_add":
+            if "_is_index_add" in bars.columns:
+                features[ref] = bars["_is_index_add"]
+            else:
+                features[ref] = pd.Series(0.0, index=bars.index)
+        elif name == "is_index_delete":
+            if "_is_index_delete" in bars.columns:
+                features[ref] = bars["_is_index_delete"]
+            else:
+                features[ref] = pd.Series(0.0, index=bars.index)
 
     return features
 
@@ -224,7 +248,13 @@ def _evaluate_condition(cond: Any, features: dict[str, Any], bars: pd.DataFrame)
         return true_series
 
     for op, args in cond.items():
-        if op == "gt" and isinstance(args, list) and len(args) == 2:
+        if op == "eq" and isinstance(args, list) and len(args) == 2:
+            a = _resolve_value(args[0], features, bars)
+            b = _resolve_value(args[1], features, bars)
+            a_s = pd.Series(a, index=bars.index) if not isinstance(a, pd.Series) else a
+            b_s = pd.Series(b, index=bars.index) if not isinstance(b, pd.Series) else b
+            return (a_s == b_s).fillna(False)
+        elif op == "gt" and isinstance(args, list) and len(args) == 2:
             a = _resolve_value(args[0], features, bars)
             b = _resolve_value(args[1], features, bars)
             return pd.Series(a > b, index=bars.index).fillna(False)

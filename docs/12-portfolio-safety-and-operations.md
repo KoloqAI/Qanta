@@ -60,6 +60,19 @@ aggregators won't reliably deliver this.
 - **M2 prerequisite gate:** confirm the chosen source actually delivers survivorship-free PIT incl. delisted
   BEFORE building the harness (M3). Do not build validation on data that can't support it.
 
+### Reconstitution calendar (required new data feed)
+The `forced_flow` archetype family (doc 13) requires an **index reconstitution calendar** with three dates
+and a direction per name: `preliminary_list_date`, `final_list_date`, `effective_date`, `action` (add/delete).
+This is available via `MarketDataProvider.reconstitution_events(index, as_of)`, point-in-time: events are
+only revealed once `as_of >= final_list_date` to prevent lookahead (the announcement-to-effective drift is
+the signal; backfilling membership before the list was public manufactures a fake edge).
+
+**Polygon's standard OHLCV does not include index membership changes.** A dedicated feed is required:
+FTSE Russell published reconstitution schedules/lists, or a vendor carrying index membership changes
+(ICE, Bloomberg). Wire as a sibling of the corporate-actions calendar — scheduled, dated, point-in-time.
+`SampleDataProvider` includes a deterministic synthetic reconstitution calendar for testing (Russell 2000,
+two years of adds/deletes including delisted names for survivorship-free testing).
+
 ## 7. Deferred (acknowledged, not built now)
 - **Tax/accounting export:** realized P&L, wash-sale flags, 1099 reconciliation, CSV/JSON export — post-live.
 - **LLM/data $-cost governor:** a monthly spend cap + alert in Settings (distinct from the statistical

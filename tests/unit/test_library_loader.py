@@ -1,6 +1,7 @@
 """Test that all seed archetypes load and pass the DSL type-checker."""
 from __future__ import annotations
 
+import copy
 import json
 import logging
 from pathlib import Path
@@ -11,7 +12,8 @@ import yaml
 from app.modules.registry.library_loader import (
     load_archetypes, _build_template, _validate_template,
     _fill_placeholders, _extract_defaults, _validate_param_bindings,
-    _validate_variant_distinctness, resolve_grid_values, LIBRARY_DIR,
+    _validate_variant_distinctness, _validate_persistence_thesis,
+    resolve_grid_values, LIBRARY_DIR,
 )
 
 
@@ -139,6 +141,14 @@ class TestParamBindings:
                 "risk": {"per_trade_stop_pct": 3.0, "max_position_pct": 5.0},
                 "param_grid": {"ghost_param": {"min": 1, "max": 5, "step": 1, "default": 3}},
                 "scan": {"all_of": [{"gt": ["avg_volume(20)", 500000]}]},
+                "persistence_thesis": {
+                    "edge_type": "behavioral",
+                    "structural_reason": "Retail traders overreact to short-term extremes creating temporary mispricings.",
+                    "forced_counterparty": "Algorithmic stop-loss cascades mechanically sell at oversold levels regardless of value.",
+                    "death_condition": ["avg_volume(20) > capacity_ceiling_usd"],
+                    "capacity_ceiling_usd": 20000000,
+                    "monitorable_as_regime": True,
+                },
             }
             bad_path = Path(tmp) / "bad_test.yaml"
             with open(bad_path, "w") as f:
@@ -177,6 +187,14 @@ class TestParamBindings:
                 "risk": {"per_trade_stop_pct": 3.0, "max_position_pct": 5.0},
                 "param_grid": {"rsi_period": {"min": 7, "max": 21, "step": 2}},
                 "scan": {"all_of": [{"gt": ["avg_volume(20)", 500000]}]},
+                "persistence_thesis": {
+                    "edge_type": "behavioral",
+                    "structural_reason": "Retail traders overreact to short-term extremes creating temporary mispricings.",
+                    "forced_counterparty": "Algorithmic stop-loss cascades mechanically sell at oversold levels regardless of value.",
+                    "death_condition": ["avg_volume(20) > capacity_ceiling_usd"],
+                    "capacity_ceiling_usd": 20000000,
+                    "monitorable_as_regime": True,
+                },
             }
             bad_path = Path(tmp) / "no_default.yaml"
             with open(bad_path, "w") as f:
@@ -252,3 +270,191 @@ class TestParamBindings:
             if not v.is_integer():
                 assert isinstance(coerced, float), f"{v} was truncated to {coerced!r}"
                 assert abs(coerced - v) < 1e-9, f"{v} was changed to {coerced}"
+
+
+def _valid_archetype_yaml() -> dict:
+    """A complete archetype with a valid persistence_thesis for testing."""
+    return {
+        "id": "test_valid",
+        "name": "Test valid archetype",
+        "family": "mean_reversion",
+        "horizon": "both",
+        "thesis": "Test thesis for validation.",
+        "watches": ["close", "rsi"],
+        "regime": {"all_of": [{"gt": ["avg_volume(20)", 500000]}]},
+        "entry": {
+            "when": {"all_of": [{"lt": ["rsi(14)", 30]}]},
+            "action": "enter_long",
+            "sizing": {"fixed_pct": {"pct": 5.0}},
+        },
+        "exits": [{"stop_loss": {"atr_mult": 1.0}}],
+        "risk": {
+            "per_trade_stop_pct": 3.0,
+            "max_position_pct": 5.0,
+            "max_gross_exposure": 40.0,
+        },
+        "scan": {"all_of": [{"gt": ["avg_volume(20)", 500000]}]},
+        "persistence_thesis": {
+            "edge_type": "behavioral",
+            "structural_reason": (
+                "Retail traders consistently overreact to short-term RSI extremes, "
+                "creating temporary mispricings that revert within days."
+            ),
+            "forced_counterparty": (
+                "Retail day-traders and algorithmic stop-loss cascades "
+                "mechanically sell at RSI oversold levels regardless of fundamental value."
+            ),
+            "death_condition": [
+                "avg_volume(20) > capacity_ceiling_usd",
+            ],
+            "capacity_ceiling_usd": 20000000,
+            "monitorable_as_regime": True,
+        },
+    }
+
+
+class TestPersistenceThesis:
+    """Validate the persistence_thesis load-time gate."""
+
+    @staticmethod
+    def _load_single(raw: dict, tmp_path: Path) -> dict:
+        yaml_path = tmp_path / f"{raw['id']}.yaml"
+        with open(yaml_path, "w") as f:
+            yaml.dump(raw, f)
+        from app.modules.registry import library_loader
+        orig = library_loader.LIBRARY_DIR
+        library_loader.LIBRARY_DIR = tmp_path
+        try:
+            return load_archetypes(validate=True)
+        finally:
+            library_loader.LIBRARY_DIR = orig
+
+    def test_valid_thesis_loads(self, tmp_path):
+        raw = _valid_archetype_yaml()
+        result = self._load_single(raw, tmp_path)
+        assert result["test_valid"]["status"] == "unexplored"
+        assert result["test_valid"]["persistence_thesis"]["edge_type"] == "behavioral"
+
+    def test_seed_archetypes_excluded(self):
+        """Existing seed archetypes lack persistence_thesis — all excluded."""
+        archetypes = load_archetypes(validate=True)
+        for aid, a in archetypes.items():
+            assert a["status"] == "excluded", (
+                f"{aid}: expected excluded (no persistence_thesis), got {a['status']}"
+            )
+            assert "persistence_thesis" in a.get("exclusion_reason", ""), (
+                f"{aid}: expected 'persistence_thesis' in exclusion_reason"
+            )
+
+    def test_monitorable_false_no_dsl_ref_ok(self, tmp_path):
+        """monitorable_as_regime=false doesn't require DSL-mappable death_conditions."""
+        raw = _valid_archetype_yaml()
+        raw["persistence_thesis"]["monitorable_as_regime"] = False
+        raw["persistence_thesis"]["death_condition"] = ["analyst_coverage > 50"]
+        result = self._load_single(raw, tmp_path)
+        assert result["test_valid"]["status"] == "unexplored"
+
+    @pytest.mark.parametrize("label,modify,fragment", [
+        (
+            "block_absent",
+            lambda r: r.pop("persistence_thesis"),
+            "persistence_thesis block absent",
+        ),
+        (
+            "bad_edge_type",
+            lambda r: r["persistence_thesis"].update(edge_type="made_up"),
+            "edge_type",
+        ),
+        (
+            "no_edge_type",
+            lambda r: r["persistence_thesis"].pop("edge_type"),
+            "edge_type",
+        ),
+        (
+            "short_reason",
+            lambda r: r["persistence_thesis"].update(structural_reason="Too short"),
+            "structural_reason",
+        ),
+        (
+            "empty_reason",
+            lambda r: r["persistence_thesis"].update(structural_reason=""),
+            "structural_reason",
+        ),
+        (
+            "short_counterparty",
+            lambda r: r["persistence_thesis"].update(forced_counterparty="Short"),
+            "forced_counterparty",
+        ),
+        (
+            "no_death_condition",
+            lambda r: r["persistence_thesis"].pop("death_condition"),
+            "death_condition",
+        ),
+        (
+            "empty_death_list",
+            lambda r: r["persistence_thesis"].update(death_condition=[]),
+            "death_condition",
+        ),
+        (
+            "empty_death_entry",
+            lambda r: r["persistence_thesis"].update(
+                death_condition=["avg_volume(20) > cap", ""]
+            ),
+            "empty entry",
+        ),
+        (
+            "zero_capacity",
+            lambda r: r["persistence_thesis"].update(capacity_ceiling_usd=0),
+            "capacity_ceiling_usd",
+        ),
+        (
+            "negative_capacity",
+            lambda r: r["persistence_thesis"].update(capacity_ceiling_usd=-1),
+            "capacity_ceiling_usd",
+        ),
+        (
+            "no_capacity",
+            lambda r: r["persistence_thesis"].pop("capacity_ceiling_usd"),
+            "capacity_ceiling_usd",
+        ),
+        (
+            "no_monitorable",
+            lambda r: r["persistence_thesis"].pop("monitorable_as_regime"),
+            "monitorable_as_regime",
+        ),
+        (
+            "monitorable_no_dsl",
+            lambda r: (
+                r["persistence_thesis"].update(monitorable_as_regime=True),
+                r["persistence_thesis"].update(
+                    death_condition=["analyst_coverage_count > 50"]
+                ),
+            ),
+            "no death_condition references",
+        ),
+    ])
+    def test_exclusion_rule(self, label, modify, fragment, tmp_path, caplog):
+        raw = _valid_archetype_yaml()
+        raw["id"] = f"test_{label}"
+        modify(raw)
+        with caplog.at_level(logging.ERROR):
+            result = self._load_single(raw, tmp_path)
+        aid = f"test_{label}"
+        assert result[aid]["status"] == "excluded", (
+            f"Expected excluded for {label}"
+        )
+        assert fragment in result[aid]["exclusion_reason"], (
+            f"Expected '{fragment}' in reason for {label}, "
+            f"got: {result[aid]['exclusion_reason']}"
+        )
+
+    def test_validate_persistence_thesis_unit(self):
+        """Direct unit test of _validate_persistence_thesis."""
+        raw = _valid_archetype_yaml()
+        errors = _validate_persistence_thesis(raw, "test_unit")
+        assert errors == [], f"Expected no errors, got: {errors}"
+
+        raw_bad = copy.deepcopy(raw)
+        del raw_bad["persistence_thesis"]
+        errors = _validate_persistence_thesis(raw_bad, "test_missing")
+        assert any("block absent" in e for e in errors)

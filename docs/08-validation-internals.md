@@ -99,7 +99,7 @@ def confidence(spec, target_R, horizon_H, oos_windows, n_eff, base_rate_p0):
     return {C: post.mean(), C_lo: post.ppf(0.10), C_hi: post.ppf(0.90)}   # act on C_lo
 ```
 - Outcome = strategy net return over H with the stop active (first-passage aware).
-- **Six validation gates** (GATES_VERSION = 3, all must pass):
+- **Six validation gates** (GATES_VERSION = 4, all must pass):
   1. `dsr` — DSR ≥ 0.95
   2. `pbo` — PBO ≤ 0.20 (skipped when PBO is None, i.e. single-config)
   3. `deg_slope` — degradation slope ≥ 0 (skipped when None)
@@ -112,9 +112,11 @@ def confidence(spec, target_R, horizon_H, oos_windows, n_eff, base_rate_p0):
   or (c) fewer than `min_peers` (default 5) peers produce valid backtest results.
   Peer backtests are part of the single validation (counted in the search-budget ledger, not a separate
   multiple-testing backdoor).
-  `gates_version` (currently 3) tracks gate-set evolution; reports predating it are stale and blocked from
+  `gates_version` (currently 4) tracks gate-set evolution; reports predating it are stale and blocked from
   approval/deployment until re-validated. Version history: v2 = peer-hit gate added; v3 = explicit `{param}`
-  placeholder binding (old naming-convention regex could produce no-op params and duplicate PBO columns).
+  placeholder binding (old naming-convention regex could produce no-op params and duplicate PBO columns);
+  v4 = persistence-thesis gate (archetypes must declare a structural edge thesis to be eligible for
+  exploration — see doc 13 §1).
 - Headline: *Conditional on {regime}, deflated {C}% (90% {C_lo}–{C_hi}) of ≥{R} over {H}, max loss {L};
   regime held {G}% of {window}; peers {f}/{n}. (DSR {d}, PBO {p}.)* Optionally a confidence-vs-target curve.
 - Never authored by the LLM. Calibration logged vs realized; recalibrate OOS only.

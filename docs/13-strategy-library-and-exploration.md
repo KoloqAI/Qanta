@@ -41,7 +41,29 @@ scan:
             {lt: ["zscore(20)", -1.0]} ]
 peers_hint: sector_or_corr
 default_universe: {min_price: 5, min_dollar_volume: 5000000}
+
+persistence_thesis:                    # REQUIRED — the structural edge claim (gates_version 4+)
+  edge_type: forced_flow               # enum: forced_flow | behavioral | risk_premium | smallness
+  structural_reason: |                 # REQUIRED, min ~40 chars.
+    Plain-language explanation of who is structurally compelled to trade sub-optimally and why
+    arbitrage capital that would correct it is absent, deterred, or capacity-limited.
+  forced_counterparty: |               # REQUIRED, min ~40 chars. Who hands you the money.
+    e.g. "Index funds mechanically buying reconstitution adds on the effective date."
+  death_condition:                     # REQUIRED, list, >=1 non-empty entry.
+    - "avg_volume(20) > capacity_ceiling_usd"   # prefer machine-checkable (DSL-referenceable)
+  capacity_ceiling_usd: 20000000       # REQUIRED, > 0. Explicit smallness moat.
+  monitorable_as_regime: true          # REQUIRED bool. If true, death_conditions must reference
+                                       #   DSL primitives or regime fields.
 ```
+
+**Persistence thesis load-time gate.** Any archetype missing `persistence_thesis` or with an incomplete
+one is excluded from exploration (same mechanism as the param-binding exclusion), with a logged
+`exclusion_reason` and `status: excluded` surfaced in the Library UI. The gate enforces presence and
+well-formedness, not correctness — human review judges whether the thesis is actually true. Rules:
+(1) block present, (2) `edge_type` in the enum, (3) `structural_reason` and `forced_counterparty`
+meet minimum content length, (4) `death_condition` is a non-empty list with no empty entries,
+(5) `capacity_ceiling_usd > 0`, (6) if `monitorable_as_regime: true`, at least one `death_condition`
+references a DSL feature primitive or a field from the archetype's regime block.
 
 ### Seed catalog (wide — build all on day one)
 Each is a DSL template + scan + param grid following the schema above. Families and members:
@@ -53,11 +75,25 @@ Each is a DSL template + scan + param grid following the schema above. Families 
 | volatility | `squeeze_breakout`, `atr_channel_breakout`, `keltner_reversion`, `vol_scaled_exposure` | both |
 | time_microstructure | `time_of_day_bias`, `end_of_day_drift`, `intraday_momentum_continuation` | intraday |
 | cross_sectional | `pairs_statistical`, `sector_relative_strength` | swing |
+| forced_flow | `russell_reconstitution_drift` | swing |
 | structural_filter | `earnings_proximity_filter`, `liquidity_regime_filter` | modifier (composes with any) |
 
 Notes: `structural_filter` archetypes are regime modifiers (e.g. `days_to_event` avoidance), not standalone
 trades. Each archetype's full entry/exit/regime/param_grid/scan ships as its YAML file. Intraday archetypes
 require a consolidated intraday feed (see doc 12 data sourcing); they degrade to swing if only EOD is wired.
+
+**Forced-flow family** (`forced_flow`): event-driven archetypes that exploit predictable institutional flow
+from index reconstitution, ETF rebalancing, or similar mandated trading.  Requires event-calendar data
+(reconstitution dates, membership changes) via `MarketDataProvider.reconstitution_events()`, point-in-time.
+`SampleDataProvider` includes a deterministic synthetic calendar for testing; Polygon does not provide this
+data — a dedicated feed (FTSE Russell, ICE, or vendor) must be wired for production.  Entry is event-relative:
+conditioned on `is_index_add` + `days_to_event(russell_effective)` being within a window.
+
+**Peer-test note for forced_flow:** the standard correlation peer-hit gate assumes a repeatable cross-sectional
+pattern. Forced-flow is event-specific; the "peers" are *other reconstitution events across years*, not
+correlated tickers. For this family, either adapt the peer test to "hit rate across historical reconstitution
+cohorts" or document why the peer gate is replaced by cross-year cohort validation. Do not silently pass
+a peer gate that doesn't mean anything.  The `peers_hint: none` flag in the archetype signals this.
 
 ### The scan playbook = what it surfaces
 This is the answer to "what does it scan for." The `universe_scan` tool runs an archetype's `scan` block

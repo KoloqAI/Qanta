@@ -151,6 +151,19 @@ def evolution(monitoring, registry):
     return EvolutionLoopImpl(monitoring=monitoring, registry=registry)
 
 
+@pytest.fixture
+def explorable_archetypes(monkeypatch):
+    """Bypass persistence_thesis validation so seed archetypes are explorable.
+
+    The thesis gate is fully covered by unit tests. E2E tests for the T2
+    pipeline need explorable archetypes to exercise scan -> backtest -> validate.
+    """
+    monkeypatch.setattr(
+        "app.modules.registry.library_loader._validate_persistence_thesis",
+        lambda raw, archetype_id: [],
+    )
+
+
 # ---------------------------------------------------------------------------
 # Task 0: Pre-flight
 # ---------------------------------------------------------------------------
@@ -161,12 +174,15 @@ class TestPreflight:
         provider = create_data_provider()
         assert isinstance(provider, SampleDataProvider)
 
-    def test_archetypes_load_without_exclusions(self):
+    def test_seed_archetypes_excluded_without_thesis(self):
         archetypes = load_archetypes(validate=True)
         assert len(archetypes) >= 20
         for aid in SUBSET:
             assert aid in archetypes, f"{aid} not found"
-            assert archetypes[aid]["status"] == "unexplored"
+            assert archetypes[aid]["status"] == "excluded", (
+                f"{aid} should be excluded (missing persistence_thesis)"
+            )
+            assert "persistence_thesis" in archetypes[aid].get("exclusion_reason", "")
 
     def test_archetype_templates_parse_after_fill(self):
         archetypes = load_archetypes(validate=True)
@@ -197,7 +213,7 @@ class TestPreflight:
 
 class TestT2Cycle:
     @pytest.fixture(autouse=True)
-    async def run_cycle(self, evolution):
+    async def run_cycle(self, evolution, explorable_archetypes):
         self.result = await evolution.run_tier2(
             budget=BUDGET,
             archetype_subset=SUBSET,
@@ -262,7 +278,7 @@ class TestArchetypePathRegression:
     """Fails if run_tier2() stops routing through load_archetypes() → template fill."""
 
     @pytest.mark.asyncio
-    async def test_ledger_entries_trace_to_loaded_archetypes(self, evolution):
+    async def test_ledger_entries_trace_to_loaded_archetypes(self, evolution, explorable_archetypes):
         result = await evolution.run_tier2(
             budget=BUDGET,
             archetype_subset=SUBSET,
@@ -327,7 +343,7 @@ class TestDeflation:
         assert bar_10 > 1.0, f"With n_eff=10, bar should be substantial, got {bar_10}"
 
     @pytest.mark.asyncio
-    async def test_n_eff_increments_per_family_not_per_config(self, evolution):
+    async def test_n_eff_increments_per_family_not_per_config(self, evolution, explorable_archetypes):
         result = await evolution.run_tier2(
             budget=BUDGET,
             archetype_subset=SUBSET,
@@ -344,7 +360,7 @@ class TestDeflation:
                     "n_eff should NOT count individual param configs"
 
     @pytest.mark.asyncio
-    async def test_budget_cap_pauses_exploration(self, evolution):
+    async def test_budget_cap_pauses_exploration(self, evolution, explorable_archetypes):
         small_budget = 2
         result = await evolution.run_tier2(
             budget=small_budget,
@@ -356,13 +372,13 @@ class TestDeflation:
 
 
 # ---------------------------------------------------------------------------
-# Task 3: Survivor surfacing + Review Queue + gates_version=3
+# Task 3: Survivor surfacing + Review Queue + gates_version check
 # ---------------------------------------------------------------------------
 
 
 class TestSurvivorSurfacing:
     @pytest.fixture(autouse=True)
-    async def run_cycle(self, evolution, registry):
+    async def run_cycle(self, evolution, registry, explorable_archetypes):
         self.result = await evolution.run_tier2(
             budget=BUDGET,
             archetype_subset=SUBSET,
@@ -383,9 +399,9 @@ class TestSurvivorSurfacing:
             all_have_reason = all(len(e["failed_gates"]) > 0 for e in validated)
             assert all_have_reason, "Suppressed trials missing failure reasons"
 
-    def test_survivors_have_gates_version_3(self):
+    def test_survivors_have_current_gates_version(self):
         for s in self.result["survivors"]:
-            assert s["gates_version"] == 3
+            assert s["gates_version"] == GATES_VERSION
 
     @pytest.mark.asyncio
     async def test_survivors_registered_in_registry(self):
@@ -511,7 +527,7 @@ class TestStalenessGate:
 
 class TestDeterminism:
     @pytest.mark.asyncio
-    async def test_two_runs_produce_identical_results(self):
+    async def test_two_runs_produce_identical_results(self, explorable_archetypes):
         reg1 = StrategyRegistryImpl()
         mon1 = MonitoringServiceImpl()
         evo1 = EvolutionLoopImpl(monitoring=mon1, registry=reg1)
@@ -554,7 +570,7 @@ class TestDeterminism:
 
 class TestApproveDeployPath:
     @pytest.mark.asyncio
-    async def test_discovered_strategy_through_approve_paper(self, client):
+    async def test_discovered_strategy_through_approve_paper(self, client, explorable_archetypes):
         from app import state
 
         registry = StrategyRegistryImpl()
@@ -650,7 +666,7 @@ class TestSeededEdgePositiveControl:
     """
 
     @pytest.fixture(autouse=True)
-    async def run_seeded_cycle(self):
+    async def run_seeded_cycle(self, explorable_archetypes):
         self.registry = StrategyRegistryImpl()
         self.monitoring = MonitoringServiceImpl()
         self.evo = EvolutionLoopImpl(monitoring=self.monitoring, registry=self.registry)
@@ -710,8 +726,8 @@ class TestSeededEdgePositiveControl:
         assert self.result["n_eff"] == self.result["trials_run"]
         assert self.result["n_eff"] > 0
 
-    def test_gates_version_3_in_pipeline(self):
-        """The pipeline uses GATES_VERSION 3 for all validations."""
+    def test_gates_version_current_in_pipeline(self):
+        """The pipeline uses the current GATES_VERSION for all validations."""
         assert self.result["trials_run"] > 0
 
 
@@ -719,7 +735,7 @@ class TestNegativeControlStillZero:
     """Negative control: plain SampleDataProvider still yields zero survivors."""
 
     @pytest.mark.asyncio
-    async def test_sample_data_yields_zero_survivors(self):
+    async def test_sample_data_yields_zero_survivors(self, explorable_archetypes):
         registry = StrategyRegistryImpl()
         monitoring = MonitoringServiceImpl()
         evo = EvolutionLoopImpl(monitoring=monitoring, registry=registry)
@@ -749,7 +765,7 @@ class TestDeployFromDiscovery:
     """
 
     @pytest.mark.asyncio
-    async def test_approve_paper_deploy(self, client):
+    async def test_approve_paper_deploy(self, client, explorable_archetypes):
         from app import state
 
         registry = StrategyRegistryImpl()

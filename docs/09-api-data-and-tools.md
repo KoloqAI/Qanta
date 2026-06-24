@@ -142,6 +142,18 @@ Scope every user-owned row by `user_id` (single-user now, multi-user-ready).
 | `deploy_strategy` `approve_strategy` | risk_increasing | … → STAGED only; executed by deterministic code after an Approval; never invoked by an LLM |
 | `promote_to_live` `set_guardrail` `place_order` | risk_increasing | **planned** — not yet registered. Will be STAGED-only like deploy/approve. |
 
-12 tools registered as of `gates_version` 3.
+12 tools registered as of `gates_version` 4.
+
+### MarketDataProvider interface
+```
+bars(symbol, start, end, timeframe, as_of) -> DataFrame
+universe(as_of) -> list[str]
+filtered_universe(as_of, min_price, min_dollar_volume, cap) -> list[str]
+reconstitution_events(index, as_of, start?, end?) -> list[{symbol, index, action, preliminary_list_date, final_list_date, effective_date}]
+```
+`reconstitution_events` is **point-in-time**: events are only revealed once `as_of >= final_list_date`.
+`SampleDataProvider` returns a deterministic synthetic calendar (Russell 2000, two years of adds/deletes).
+`PolygonDataProvider` raises `NotImplementedError` — Polygon OHLCV does not include index membership
+changes; a dedicated vendor feed (FTSE Russell, ICE, or data vendor) must be wired.
 
 Workflows are declarative pipelines over these tools (e.g., evolution T2: `universe_scan → author_strategy → backtest(param grid) → validate(competing_returns)`), runnable on a schedule without an interactive agent.

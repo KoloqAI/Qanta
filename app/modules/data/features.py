@@ -181,6 +181,20 @@ def compute_dsl_feature(
         )
     elif name == "range_detect":
         result = fc.range_detect(bars["high"], bars["low"], int(args[0]))
+    elif name == "days_to_event":
+        kind = str(args[0]) if args else "russell_effective"
+        col = f"_days_to_{kind}"
+        if col in bars.columns:
+            return bars[col]
+        return pd.Series(np.nan, index=bars.index)
+    elif name == "is_index_add":
+        if "_is_index_add" in bars.columns:
+            return bars["_is_index_add"]
+        return pd.Series(0.0, index=bars.index)
+    elif name == "is_index_delete":
+        if "_is_index_delete" in bars.columns:
+            return bars["_is_index_delete"]
+        return pd.Series(0.0, index=bars.index)
     else:
         raise ValueError(f"Unknown DSL feature: {name}")
 
@@ -215,6 +229,13 @@ def evaluate_condition(
 ) -> tuple[bool, float]:
     """Evaluate one scan condition.  Returns ``(passed, score)``."""
     for op, operands in condition.items():
+        if op == "eq":
+            left = _resolve_operand(operands[0], bars)
+            right = _resolve_operand(operands[1], bars)
+            if np.isnan(left) or np.isnan(right):
+                return False, 0.0
+            return (True, 0.9) if left == right else (False, 0.0)
+
         if op == "gt":
             left = _resolve_operand(operands[0], bars)
             right = _resolve_operand(operands[1], bars)

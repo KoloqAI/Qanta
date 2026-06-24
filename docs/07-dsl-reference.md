@@ -32,12 +32,21 @@ interpreted deterministically by the backtest and execution engines. Same spec, 
 | `avg_volume(n)` | `n:int` | liquidity |
 | `time_of_day` | — | minutes since open (`Series`) |
 | `session_phase` | — | `open|mid|close` enum series |
-| `days_to_event(kind)` | `kind:str` | sessions to next scheduled event |
+| `days_to_event(kind)` | `kind:str` | sessions to next scheduled event (requires event-enriched bars) |
+| `is_index_add` | — | 1.0 on dates where the symbol is a confirmed index addition, 0.0 otherwise |
+| `is_index_delete` | — | 1.0 on dates where the symbol is a confirmed index deletion, 0.0 otherwise |
+
+**Event features** (`days_to_event`, `is_index_add`, `is_index_delete`) read from event-calendar columns
+injected into bars by `enrich_bars_with_events()` before interpretation.  Without enrichment they
+gracefully fall back to NaN / 0.0.  The reconstitution calendar is point-in-time: events are only
+revealed once `as_of >= final_list_date` (see doc 12 §6).  Added in DSL vocabulary version 2.
 
 ## Condition primitives  (output `Bool`)
-`gt(a,b)` `lt(a,b)` `between(a,lo,hi)` · `crosses_above(a,b)` `crosses_below(a,b)` ·
+`eq(a,b)` · `gt(a,b)` `lt(a,b)` `between(a,lo,hi)` · `crosses_above(a,b)` `crosses_below(a,b)` ·
 `within_band(a,lo,hi)` `outside_band(a,lo,hi)` · `held_for(cond,n)` (cond true for n consecutive bars) ·
 combinators `all_of([...])` `any_of([...])` `not(cond)`. Args accept `Series` or `Scalar`.
+
+`eq` compares for equality — use with boolean features: `{eq: ["is_index_add", 1]}`.
 
 ## Action primitives
 - Entry: `enter_long(when:Bool, sizing)` · `enter_short(when:Bool, sizing)`.
@@ -50,6 +59,14 @@ combinators `all_of([...])` `any_of([...])` `not(cond)`. Args accept `Series` or
 ## Regime gate
 `regime: { all_of: [<Bool conditions>] }`. The strategy is active only while all hold. The same
 conditions drive `regime_break_exit` and are monitored live; a break triggers a flatten of that strategy.
+
+## Persistence thesis (required on archetypes, gates_version 4+)
+Archetype YAML files must include a `persistence_thesis` block declaring *why the edge survives an
+efficient market* and *what kills it*. This is validated at load time — archetypes missing a well-formed
+thesis are excluded from exploration. See doc 13 §1 for the full sub-field schema (`edge_type`,
+`structural_reason`, `forced_counterparty`, `death_condition`, `capacity_ceiling_usd`,
+`monitorable_as_regime`). Instantiated strategy specs do not carry the thesis (it lives on the
+archetype); the spec's `thesis` field remains the one-line trading idea.
 
 ## Risk envelope (must be ⊆ global guardrails — may be tighter, never looser)
 `risk: { max_position_pct, per_trade_stop_pct, max_gross_exposure }`. Validated at parse time against the
@@ -99,3 +116,7 @@ A new primitive is: (1) deterministic, unit-tested code implementing the primiti
 (2) registered with a typed signature and param ranges; (3) version-bumps the DSL vocabulary;
 (4) approved by a human and meta-validated (improves OOS on the meta-lockbox). Existing validated specs
 pin their DSL version and are unaffected.
+
+Current `DSL_VOCABULARY_VERSION = 2` (`app/core/dsl/primitives.py`).  Version history:
+v1 = initial 22 feature + 10 condition primitives; v2 = `eq` condition, `is_index_add`,
+`is_index_delete` features, `days_to_event` unstubbed (event-calendar integration).

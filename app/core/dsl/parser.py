@@ -20,7 +20,7 @@ KNOWN_EXIT_TYPES = {
     "stop_loss", "take_profit", "trailing_stop", "time_stop", "regime_break_exit",
 }
 KNOWN_CONDITION_OPS = {
-    "gt", "lt", "between", "within_band", "outside_band",
+    "eq", "gt", "lt", "between", "within_band", "outside_band",
     "crosses_above", "crosses_below", "held_for",
     "all_of", "any_of", "not",
 }
@@ -188,7 +188,7 @@ def _validate_condition(cond: Any, errors: list[ParseError], field: str) -> None
                 _validate_condition(args, errors, field)
             elif isinstance(args, list) and len(args) == 1:
                 _validate_condition(args[0], errors, field)
-        elif op in ("gt", "lt", "crosses_above", "crosses_below"):
+        elif op in ("eq", "gt", "lt", "crosses_above", "crosses_below"):
             if not isinstance(args, list) or len(args) != 2:
                 errors.append(ParseError(
                     field, f"'{op}' requires exactly 2 arguments",

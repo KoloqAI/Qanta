@@ -24,6 +24,9 @@ LIBRARY_DIR = Path(__file__).parents[3] / "config" / "library"
 
 DSL_TEMPLATE_FIELDS = {"thesis", "regime", "entry", "exits", "risk", "universe", "validation"}
 
+VALID_EDGE_TYPES = frozenset({"forced_flow", "behavioral", "risk_premium", "smallness"})
+MIN_CONTENT_LENGTH = 40
+
 _PLACEHOLDER_RE = re.compile(r"\{(\w+)\}")
 
 
@@ -105,6 +108,90 @@ def resolve_grid_values(entry: dict) -> list[float]:
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
+
+
+def _death_condition_maps_to_dsl(
+    death_conditions: list[str],
+    regime: dict[str, Any],
+) -> bool:
+    """Check if any death_condition references a DSL feature primitive or regime field."""
+    from app.core.dsl.primitives import FEATURE_PRIMITIVES
+
+    known = set(FEATURE_PRIMITIVES.keys())
+    regime_text = json.dumps(regime, default=str).lower()
+    for name in list(known):
+        if name in regime_text:
+            known.add(name)
+
+    for dc in death_conditions:
+        dc_lower = dc.lower()
+        for name in known:
+            if name in dc_lower:
+                return True
+    return False
+
+
+def _validate_persistence_thesis(
+    raw: dict[str, Any],
+    archetype_id: str,
+) -> list[str]:
+    """Validate the persistence_thesis block (rules 1-6 of the schema gate)."""
+    errors: list[str] = []
+    pt = raw.get("persistence_thesis")
+
+    if not pt or not isinstance(pt, dict):
+        errors.append(f"[{archetype_id}] persistence_thesis block absent")
+        return errors
+
+    edge_type = pt.get("edge_type")
+    if not edge_type or edge_type not in VALID_EDGE_TYPES:
+        errors.append(
+            f"[{archetype_id}] persistence_thesis.edge_type missing or "
+            f"invalid (got {edge_type!r}, expected one of {sorted(VALID_EDGE_TYPES)})"
+        )
+
+    for field_name in ("structural_reason", "forced_counterparty"):
+        content = (pt.get(field_name) or "").strip()
+        if len(content) < MIN_CONTENT_LENGTH:
+            errors.append(
+                f"[{archetype_id}] persistence_thesis.{field_name} "
+                f"too short ({len(content)} chars, min {MIN_CONTENT_LENGTH})"
+            )
+
+    death_conditions = pt.get("death_condition")
+    has_valid_death_conditions = True
+    if not death_conditions or not isinstance(death_conditions, list) or len(death_conditions) == 0:
+        errors.append(
+            f"[{archetype_id}] persistence_thesis.death_condition absent or empty"
+        )
+        has_valid_death_conditions = False
+    elif any(not (dc if isinstance(dc, str) else "").strip() for dc in death_conditions):
+        errors.append(
+            f"[{archetype_id}] persistence_thesis.death_condition contains empty entry"
+        )
+
+    capacity = pt.get("capacity_ceiling_usd")
+    if capacity is None or not isinstance(capacity, (int, float)) or capacity <= 0:
+        errors.append(
+            f"[{archetype_id}] persistence_thesis.capacity_ceiling_usd "
+            f"absent or <= 0 (got {capacity!r})"
+        )
+
+    monitorable = pt.get("monitorable_as_regime")
+    if monitorable is None or not isinstance(monitorable, bool):
+        errors.append(
+            f"[{archetype_id}] persistence_thesis.monitorable_as_regime "
+            f"missing or not a bool (got {monitorable!r})"
+        )
+    elif monitorable and has_valid_death_conditions:
+        regime = raw.get("regime", {})
+        if not _death_condition_maps_to_dsl(death_conditions, regime):
+            errors.append(
+                f"[{archetype_id}] monitorable_as_regime is true but no "
+                f"death_condition references a DSL primitive or regime field"
+            )
+
+    return errors
 
 
 def _validate_param_bindings(
@@ -245,7 +332,33 @@ def load_archetypes(validate: bool = True) -> dict[str, dict[str, Any]]:
         template = _build_template(raw)
         param_grid = raw.get("param_grid", {})
 
-        # -- BATCH 1 safety net: validate param bindings at load time --
+        # -- Persistence thesis gate --
+        thesis_errors = _validate_persistence_thesis(raw, archetype_id)
+        if thesis_errors:
+            for err in thesis_errors:
+                logger.error("Persistence thesis error: %s", err)
+            all_errors.extend(thesis_errors)
+            excluded.append(archetype_id)
+            archetypes[archetype_id] = {
+                "id": archetype_id,
+                "name": raw.get("name", archetype_id),
+                "family": raw.get("family", ""),
+                "horizon": raw.get("horizon", "both"),
+                "thesis": raw.get("thesis", ""),
+                "template": template,
+                "scan": raw.get("scan", {}),
+                "param_grid": param_grid,
+                "source": "seed",
+                "status": "excluded",
+                "exclusion_reason": "; ".join(thesis_errors),
+                "watches": raw.get("watches", []),
+                "peers_hint": raw.get("peers_hint", ""),
+                "default_universe": raw.get("default_universe", {}),
+                "persistence_thesis": raw.get("persistence_thesis"),
+            }
+            continue
+
+        # -- Param binding safety net --
         if param_grid:
             binding_errors = _validate_param_bindings(template, param_grid, archetype_id)
             if binding_errors:
@@ -268,6 +381,7 @@ def load_archetypes(validate: bool = True) -> dict[str, dict[str, Any]]:
                     "watches": raw.get("watches", []),
                     "peers_hint": raw.get("peers_hint", ""),
                     "default_universe": raw.get("default_universe", {}),
+                    "persistence_thesis": raw.get("persistence_thesis"),
                 }
                 continue
 
@@ -294,6 +408,7 @@ def load_archetypes(validate: bool = True) -> dict[str, dict[str, Any]]:
                     "watches": raw.get("watches", []),
                     "peers_hint": raw.get("peers_hint", ""),
                     "default_universe": raw.get("default_universe", {}),
+                    "persistence_thesis": raw.get("persistence_thesis"),
                 }
                 continue
 
@@ -327,11 +442,12 @@ def load_archetypes(validate: bool = True) -> dict[str, dict[str, Any]]:
             "watches": raw.get("watches", []),
             "peers_hint": raw.get("peers_hint", ""),
             "default_universe": raw.get("default_universe", {}),
+            "persistence_thesis": raw.get("persistence_thesis"),
         }
 
     if excluded:
         logger.error(
-            "Excluded %d archetype(s) from exploration due to param binding errors: %s",
+            "Excluded %d archetype(s) from exploration: %s",
             len(excluded), ", ".join(excluded),
         )
 

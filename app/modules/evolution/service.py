@@ -275,6 +275,7 @@ class EvolutionLoopImpl:
         from app.modules.validation.service import ValidationHarnessImpl, _load_validation_config
         from app.modules.data.providers import (
             create_data_provider, recent_window, scan_universe, SampleDataProvider,
+            enrich_bars_if_needed,
         )
         from app.modules.registry.library_loader import load_archetypes
 
@@ -335,6 +336,9 @@ class EvolutionLoopImpl:
 
                 val_start, val_end = recent_window(700)
                 bars = await provider.bars(ticker, val_start, val_end)
+                bars = await enrich_bars_if_needed(
+                    provider, archetype, ticker, bars, as_of_dt,
+                )
                 if bars.empty or len(bars) < 50:
                     trials_run += 1
                     self._n_eff += 1

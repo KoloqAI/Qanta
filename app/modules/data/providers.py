@@ -19,6 +19,36 @@ SAMPLE_UNIVERSE = [
     "KO", "PEP", "MDLZ", "GIS", "CSCO", "INTC", "AMD", "CRM",
 ]
 
+# Deterministic synthetic reconstitution calendar for testing.
+# Russell 2000 reconstitutes annually in late June. We model two years of events
+# with adds/deletes at the small-cap boundary. Dates are historical-style:
+#   preliminary_list_date ~3 weeks before effective, final_list_date ~1 week before.
+_SAMPLE_RECONSTITUTION_EVENTS: list[dict] = [
+    # 2023 Russell reconstitution
+    {"symbol": "RECON_ADD1", "index": "russell_2000", "action": "add",
+     "preliminary_list_date": date(2023, 6, 2), "final_list_date": date(2023, 6, 16),
+     "effective_date": date(2023, 6, 23)},
+    {"symbol": "RECON_ADD2", "index": "russell_2000", "action": "add",
+     "preliminary_list_date": date(2023, 6, 2), "final_list_date": date(2023, 6, 16),
+     "effective_date": date(2023, 6, 23)},
+    {"symbol": "RECON_DEL1", "index": "russell_2000", "action": "delete",
+     "preliminary_list_date": date(2023, 6, 2), "final_list_date": date(2023, 6, 16),
+     "effective_date": date(2023, 6, 23)},
+    # 2024 Russell reconstitution
+    {"symbol": "RECON_ADD3", "index": "russell_2000", "action": "add",
+     "preliminary_list_date": date(2024, 5, 31), "final_list_date": date(2024, 6, 14),
+     "effective_date": date(2024, 6, 28)},
+    {"symbol": "RECON_ADD4", "index": "russell_2000", "action": "add",
+     "preliminary_list_date": date(2024, 5, 31), "final_list_date": date(2024, 6, 14),
+     "effective_date": date(2024, 6, 28)},
+    {"symbol": "RECON_DEL2", "index": "russell_2000", "action": "delete",
+     "preliminary_list_date": date(2024, 5, 31), "final_list_date": date(2024, 6, 14),
+     "effective_date": date(2024, 6, 28)},
+    {"symbol": "DELIST1", "index": "russell_2000", "action": "delete",
+     "preliminary_list_date": date(2024, 5, 31), "final_list_date": date(2024, 6, 14),
+     "effective_date": date(2024, 6, 28)},
+]
+
 # Symbols that "delisted" at certain dates (for survivorship-free testing)
 DELISTED = {
     "DELIST1": date(2022, 6, 15),
@@ -105,6 +135,34 @@ class SampleDataProvider:
         cap: int = 500,
     ) -> list[str]:
         return await self.universe(as_of=as_of)
+
+    async def reconstitution_events(
+        self,
+        index: str,
+        as_of: datetime,
+        start: datetime | None = None,
+        end: datetime | None = None,
+    ) -> list[dict]:
+        """Return reconstitution events visible at as_of (point-in-time).
+
+        An event is only revealed once ``as_of >= final_list_date``.  This
+        prevents lookahead: the membership change is unknown before the
+        final list is published.
+        """
+        as_of_d = as_of.date() if isinstance(as_of, datetime) else as_of
+        start_d = start.date() if start else date(2000, 1, 1)
+        end_d = end.date() if end else date(2099, 12, 31)
+
+        results: list[dict] = []
+        for evt in _SAMPLE_RECONSTITUTION_EVENTS:
+            if evt["index"] != index:
+                continue
+            if evt["final_list_date"] > as_of_d:
+                continue
+            if evt["effective_date"] < start_d or evt["effective_date"] > end_d:
+                continue
+            results.append(dict(evt))
+        return results
 
 
 # Polygon aggregate timespans keyed by the suffix of our timeframe strings.
@@ -363,6 +421,26 @@ class PolygonDataProvider:
         """
         return sorted(SAMPLE_UNIVERSE)
 
+    async def reconstitution_events(
+        self,
+        index: str,
+        as_of: datetime,
+        start: datetime | None = None,
+        end: datetime | None = None,
+    ) -> list[dict]:
+        """Polygon does not provide index reconstitution data.
+
+        A separate vendor feed (FTSE Russell, ICE, or a data vendor carrying
+        index membership changes) must be wired.  This method raises so callers
+        know the data path is not yet available.
+        """
+        raise NotImplementedError(
+            "Reconstitution calendar requires a dedicated data feed "
+            "(FTSE Russell / ICE / vendor). Polygon OHLCV does not include "
+            "index membership changes. Wire a reconstitution provider or "
+            "use SampleDataProvider for testing."
+        )
+
 
 def _empty_bars() -> pd.DataFrame:
     df = pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
@@ -402,6 +480,49 @@ def create_data_provider() -> Any:
 
     logger.info("No POLYGON_API_KEY configured — using SampleDataProvider")
     return SampleDataProvider()
+
+
+# ---------------------------------------------------------------------------
+# Event enrichment
+# ---------------------------------------------------------------------------
+
+EVENT_FEATURES = frozenset({"is_index_add", "is_index_delete", "days_to_event"})
+
+
+def _needs_event_enrichment(archetype: dict) -> bool:
+    """Check if an archetype references event features in watches, scan, or template."""
+    import json as _json
+
+    watches = archetype.get("watches", [])
+    if any(w in EVENT_FEATURES for w in watches):
+        return True
+    combined = _json.dumps(archetype.get("scan", {})) + _json.dumps(archetype.get("template", {}))
+    return any(feat in combined for feat in EVENT_FEATURES)
+
+
+async def enrich_bars_if_needed(
+    provider: Any,
+    archetype: dict,
+    ticker: str,
+    bars: pd.DataFrame,
+    as_of: datetime,
+) -> pd.DataFrame:
+    """Enrich bars with event columns when the archetype references event features."""
+    if bars.empty or not _needs_event_enrichment(archetype):
+        return bars
+
+    from app.modules.data.events import enrich_bars_with_events
+
+    try:
+        events = await provider.reconstitution_events(
+            index="russell_2000", as_of=as_of,
+        )
+    except (NotImplementedError, AttributeError):
+        events = []
+
+    if events:
+        enrich_bars_with_events(bars, ticker, events)
+    return bars
 
 
 # ---------------------------------------------------------------------------
@@ -451,6 +572,16 @@ async def scan_universe(
 
     sem = asyncio.Semaphore(10)
 
+    needs_events = _needs_event_enrichment(archetype)
+    recon_events: list[dict] | None = None
+    if needs_events:
+        try:
+            recon_events = await provider.reconstitution_events(
+                index="russell_2000", as_of=as_of,
+            )
+        except (NotImplementedError, AttributeError):
+            recon_events = []
+
     async def _evaluate(ticker: str) -> dict | None:
         async with sem:
             try:
@@ -460,6 +591,9 @@ async def scan_universe(
                 return None
             if bars.empty or len(bars) < 10:
                 return None
+            if recon_events is not None and recon_events:
+                from app.modules.data.events import enrich_bars_with_events
+                enrich_bars_with_events(bars, ticker, recon_events)
             try:
                 score = evaluate_scan_block(scan_block, bars)
             except Exception:

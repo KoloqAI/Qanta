@@ -34,6 +34,11 @@ seeded known-good spec and fails a seeded known-overfit spec.
 core/dsl: primitive vocabulary, spec schema, parser + type-checker, deterministic interpreter (doc 03).
 **Gate:** a valid spec type-checks and runs through M2+M3; a malformed/out-of-vocabulary spec is rejected at parse time (test).
 **Status:** Done. Parser with 9 rules, interpreter with 16 primitives, all gate tests pass.
+DSL vocabulary version 2: `eq` condition, `is_index_add`/`is_index_delete` event features,
+`days_to_event` unstubbed with event-calendar integration. Reconstitution calendar provider method
+added to `MarketDataProvider`; `SampleDataProvider` includes deterministic synthetic calendar;
+`PolygonDataProvider` flags the feed gap. `forced_flow` family + `russell_reconstitution_drift`
+archetype added to the library.
 
 ## M5 — Execution skeleton + guardrails on paper (SAFETY-CRITICAL) ✅
 M6 ExecutionRuntime on nautilus_trader (same engine as M2 backtest → research-to-live parity) with PaperBroker / IBKRBroker (IB Gateway via IBeam, headless); M7 RiskGate as a mandatory pre-trade filter wrapping the engine; daily

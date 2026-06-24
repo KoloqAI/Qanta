@@ -18,6 +18,14 @@ class MarketDataProvider(Protocol):
 
     async def universe(self, as_of: datetime | None = None) -> list[str]: ...
 
+    async def reconstitution_events(
+        self,
+        index: str,
+        as_of: datetime,
+        start: datetime | None = None,
+        end: datetime | None = None,
+    ) -> list[dict]: ...
+
 
 class FeatureStore(Protocol):
     async def compute_features(

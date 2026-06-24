@@ -1,0 +1,68 @@
+id: russell_reconstitution_drift
+name: Russell reconstitution forced-flow drift (small-cap boundary)
+family: forced_flow
+horizon: swing
+thesis: "Pre-position ahead of mechanical index-fund flow in small-cap reconstitution adds, exit into forced buying on effective date."
+watches: [close, avg_volume, atr, days_to_event, is_index_add]
+
+regime:
+  all_of:
+    - { lt: ["avg_volume(20)", "{capacity_volume_ceiling}"] }
+    - { gt: ["avg_volume(20)", "{min_tradeable_volume}"] }
+
+entry:
+  when:
+    all_of:
+      - { eq: ["is_index_add", 1] }
+      - { between: ["days_to_event(russell_effective)", "{enter_min_days}", "{enter_max_days}"] }
+  action: enter_long
+  sizing:
+    vol_scaled:
+      target_vol: 0.08
+
+exits:
+  - stop_loss:
+      atr_mult: "{stop_atr}"
+  - time_stop:
+      sessions: "{hold_sessions}"
+  - regime_break_exit: true
+
+risk:
+  per_trade_stop_pct: 5.0
+  max_position_pct: 5.0
+  max_gross_exposure: 40.0
+
+param_grid:
+  enter_min_days:          { min: 1,  max: 5,  step: 1,  default: 2 }
+  enter_max_days:          { min: 5,  max: 15, step: 5,  default: 10 }
+  hold_sessions:           { min: 3,  max: 12, step: 3,  default: 8 }
+  stop_atr:                { min: 1.0, max: 2.5, step: 0.5, default: 1.5 }
+  capacity_volume_ceiling: { min: 300000, max: 1000000, step: 350000, default: 650000 }
+  min_tradeable_volume:    { min: 50000, max: 150000, step: 50000, default: 100000 }
+
+scan:
+  all_of:
+    - { eq: ["is_index_add", 1] }
+    - { between: ["days_to_event(russell_effective)", 1, 15] }
+    - { lt: ["avg_volume(20)", 1000000] }
+
+peers_hint: none
+default_universe:
+  min_price: 3
+  max_dollar_volume: 25000000
+
+persistence_thesis:
+  edge_type: forced_flow
+  structural_reason: |
+    Index funds mechanically trade reconstitution adds/deletes on the effective date, price-insensitive
+    by mandate. At the small-cap boundary the per-name dollar flow is tiny relative to the cost and
+    minimum-size constraints of arbitrage desks, so the announcement-to-effective drift is incompletely
+    competed away. We harvest the predictable imbalance; we do not forecast fundamentals.
+  forced_counterparty: |
+    Passive index funds forced to buy adds / sell deletes on the effective date irrespective of price.
+  death_condition:
+    - "avg_volume(20) > capacity_ceiling_usd"
+    - "index methodology change (banding / multi-day phase-in) compresses the effect"
+    - "announcement-to-effective drift spread compresses below cost"
+  capacity_ceiling_usd: 25000000
+  monitorable_as_regime: true
