@@ -156,11 +156,23 @@ Once up:
 - **UI** → [http://localhost:5173](http://localhost:5173)
 - **API docs** → [http://localhost:8000/docs](http://localhost:8000/docs)
 
+### Day-to-day rebuild
+
+After changing Dockerfiles, `docker-compose.yml`, or other baked-in config (e.g. `vite.config.ts`):
+
+```bash
+./run.sh -rb
+```
+
+Rebuilds images using Docker layer cache (no re-downloading dependencies), recreates containers in
+startup order, and preserves all volumes (Postgres, Redis, Ollama models).
+
 ### All available commands
 
 | Command | What it does |
 |---------|-------------|
 | `./run.sh -f` | **Fresh build** — drop all containers, images, volumes; rebuild from scratch |
+| `./run.sh -rb` | **Quick rebuild** — rebuild images (cached layers), recreate containers, keep volumes |
 | `./run.sh -ui` | **Rebuild frontend** — stop `web`, purge its image, rebuild with `--no-cache` |
 | `./run.sh -bk` | **Rebuild backend** — stop `api` + `worker`, purge their images, rebuild with `--no-cache` |
 | `./run.sh -up` | **Start** — bring all services up (no rebuild) |

@@ -4,6 +4,7 @@
 #
 # Flags:
 #   -f    Fresh build: tear down everything and rebuild from scratch
+#   -rb   Quick rebuild: rebuild images (cached deps), recreate containers, preserve data
 #   -ui   Rebuild the web (frontend) service with forced cache cleanup
 #   -bk   Rebuild the backend (api + worker) services with forced cache cleanup
 #   -up   Start all services (no rebuild)
@@ -45,6 +46,7 @@ Quanta build & operations script
 Usage: ./run.sh [flag]
 
   -f      Fresh build     Drop all containers, images, volumes and rebuild from scratch
+  -rb     Quick rebuild   Rebuild images (cached layers), recreate containers, keep volumes
   -ui     Rebuild UI      Stop web service, purge its image, rebuild with no cache
   -bk     Rebuild backend Stop api+worker, purge their images, rebuild with no cache
   -up     Start           Start all services (no rebuild)
@@ -68,6 +70,14 @@ fresh_build() {
   log "Starting services..."
   $COMPOSE up -d
   ok "Fresh build complete. API → http://localhost:8000 | UI → http://localhost:5173"
+}
+
+# ── -rb : quick rebuild (cached deps, data preserved) ───────────────────────
+quick_rebuild() {
+  log "Quick rebuild: building images (cached layers), recreating containers (volumes preserved)..."
+  $COMPOSE build
+  $COMPOSE up -d --force-recreate
+  ok "Quick rebuild complete. API → http://localhost:8000 | UI → http://localhost:5173"
 }
 
 # ── -ui : rebuild frontend ────────────────────────────────────────────────────
@@ -154,6 +164,7 @@ fi
 
 case "${1}" in
   -f)    fresh_build ;;
+  -rb)   quick_rebuild ;;
   -ui)   rebuild_ui ;;
   -bk)   rebuild_backend ;;
   -up)   start_up ;;

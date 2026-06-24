@@ -53,6 +53,8 @@ services:
       - ./web/index.html:/app/index.html
     environment:
       API_PROXY_TARGET: http://api:8000
+    depends_on:
+      - api
 
   postgres:
     image: postgres:16-alpine
