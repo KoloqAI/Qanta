@@ -41,7 +41,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from app import state
     invalidate_stale_reports(state.validation_reports)
 
+    try:
+        from arq import create_pool as _arq_create_pool
+        from arq.connections import RedisSettings as _ArqRedisSettings
+        pool = await _arq_create_pool(
+            _ArqRedisSettings.from_dsn(settings.redis_url)
+        )
+        app.state.arq_pool = pool
+    except Exception as exc:
+        app.state.arq_pool = None
+        logger.warning("Arq pool unavailable — job enqueue disabled: %s", exc)
+
     yield
+
+    if getattr(app.state, "arq_pool", None):
+        await app.state.arq_pool.aclose()
 
 
 def create_app() -> FastAPI:

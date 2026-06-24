@@ -9,6 +9,12 @@ from app.models.base import Base
 from app import deps
 
 
+@pytest.fixture(autouse=True)
+def _force_sample_provider(monkeypatch):
+    """Ensure tests always use SampleDataProvider, never hit live APIs."""
+    monkeypatch.setattr("app.config.settings.polygon_api_key", "")
+
+
 @pytest.fixture
 async def test_engine():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")

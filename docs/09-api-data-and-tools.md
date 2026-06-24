@@ -59,6 +59,14 @@ Settings
 WS
   /ws/jobs/{id}   /ws/monitor   /ws/assistant
 
+  Transport: Redis Streams.  The worker XADD's events to a Redis Stream
+  keyed ``job:{id}:events`` (MAXLEN ~1000, TTL 1 h).  The WS relay in the
+  API process XREAD BLOCKs from id "0" so late-connecting clients replay
+  the full history.  For legacy jobs that never publish a stream the XREAD
+  times out every 5 s and the relay sends a heartbeat — identical to the
+  old heartbeat-only fallback.  No in-process event bus; worker and API
+  are fully decoupled via Redis.
+
   /ws/jobs/{id} event vocabulary (consumed by the Registry activity feed):
   The client normalizes raw WS messages into AG-UI-style events via `web/src/lib/jobEvents.ts`:
     run_started    — job accepted; lifecycle begins

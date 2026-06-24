@@ -15,42 +15,27 @@ router = APIRouter()
 async def ws_job(websocket: WebSocket, job_id: str) -> None:
     """WebSocket for job progress updates.
 
-    When an event buffer exists for *job_id* (created by the explore
-    endpoint before the task is spawned), subscribes to the in-process
-    event bus and relays every event to the client.  Falls back to
-    heartbeat-only mode for legacy jobs that don't publish events.
+    Reads the Redis Stream ``job:{job_id}:events`` via XREAD BLOCK,
+    starting from id "0" so late-connecting clients replay all events.
+    For legacy jobs that never publish a stream the XREAD times out
+    every 5 s and the handler sends a heartbeat — identical to the old
+    heartbeat-only fallback.
     """
     await websocket.accept()
     try:
-        from app.workers.job_events import has_job, iter_events, cleanup_job
+        from app.workers.job_events import iter_events
 
-        if has_job(job_id):
-            async for event in iter_events(job_id):
-                if event is None:
-                    await websocket.send_json({
-                        "type": "heartbeat",
-                        "job_id": job_id,
-                        "ts": datetime.utcnow().isoformat(),
-                    })
-                else:
-                    await websocket.send_json(event)
-                    if event.get("type") in ("run_finished", "run_error"):
-                        break
-            cleanup_job(job_id)
-        else:
-            tick = 0
-            while True:
+        async for event in iter_events(job_id):
+            if event is None:
                 await websocket.send_json({
                     "type": "heartbeat",
                     "job_id": job_id,
-                    "tick": tick,
                     "ts": datetime.utcnow().isoformat(),
                 })
-                tick += 1
-                try:
-                    await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
-                except asyncio.TimeoutError:
-                    pass
+            else:
+                await websocket.send_json(event)
+                if event.get("type") in ("run_finished", "run_error"):
+                    break
     except WebSocketDisconnect:
         pass
 

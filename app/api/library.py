@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from app.deps import DB, CurrentUser
@@ -114,40 +114,37 @@ async def scan_archetype(
 
 @router.post("/{archetype_id}/explore")
 async def explore_archetype(
-    archetype_id: str, body: ExploreBody, db: DB, user: CurrentUser
+    archetype_id: str, body: ExploreBody, db: DB, user: CurrentUser,
+    request: Request,
 ) -> dict:
-    """Queue an exploration sweep for this archetype.
+    """Queue an exploration sweep on the Arq worker.
     Budget-governed, ledger-tracked. Returns a job_id."""
-    import asyncio
-    from app.workers.tasks import run_explore
-    from app.workers.job_events import init_job
-
     a = _archetypes.get(archetype_id)
     if not a:
         raise HTTPException(status_code=404, detail="Archetype not found")
 
+    pool = getattr(request.app.state, "arq_pool", None)
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Job queue unavailable")
+
     job_id = str(uuid.uuid4())
+    param_grid = body.param_grid or a.get("param_grid", {})
+
     run = {
         "id": str(uuid.uuid4()),
         "archetype_id": archetype_id,
         "budget": body.budget,
-        "param_grid": body.param_grid or a.get("param_grid", {}),
+        "param_grid": param_grid,
         "trials": 0,
         "survivors": 0,
         "status": "queued",
     }
     _exploration_runs.setdefault(archetype_id, []).append(run)
 
-    init_job(job_id)
-
-    asyncio.create_task(run_explore(
-        ctx={},
-        job_id=job_id,
-        archetype_id=archetype_id,
-        budget=body.budget,
-        param_grid=body.param_grid or a.get("param_grid", {}),
-        registry=state.registry,
-    ))
+    await pool.enqueue_job(
+        "run_explore", job_id, archetype_id, body.budget, param_grid,
+        _job_id=job_id,
+    )
 
     await state.audit_log.log(
         actor="system",
@@ -159,5 +156,3 @@ async def explore_archetype(
     )
 
     return {"job_id": job_id, "archetype_id": archetype_id, "status": "queued"}
-
-

@@ -140,7 +140,7 @@ async def run_explore(
     """Explore one archetype: universe_scan -> param-grid backtest -> validate.
 
     Deterministic, agent-free (doc 13 section 2).  Publishes AG-UI events to
-    the in-process event bus for real-time streaming via /ws/jobs/{job_id}.
+    the Redis Stream ``job:{job_id}:events`` for real-time WS relay.
     """
     import copy
     import hashlib
@@ -412,5 +412,8 @@ async def run_explore(
         }
 
     except Exception as exc:
-        await emit({"type": "run_error", "error": str(exc)})
-        return {"status": "failed", "error": str(exc)}
+        try:
+            await emit({"type": "run_error", "error": str(exc)})
+        except Exception:
+            pass
+        raise

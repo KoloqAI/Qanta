@@ -1,71 +1,67 @@
-"""In-process event bus for job progress streaming.
+"""Redis Streams event bus for cross-process job progress streaming.
 
-Per-job event buffer that supports multiple readers (WS clients), handles
-the subscribe-before-publish race via pre-initialized buffers, and signals
-heartbeats on idle timeout.
+publish_event() XADD's events from the worker process.
+iter_events() XREAD's them from the API process (WS relay).
+Late subscribers replay from id "0" — no subscribe-before-publish race.
 """
 from __future__ import annotations
 
-import asyncio
+import json
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator
 
+import redis.asyncio as aioredis
 
-_buffers: dict[str, list[dict[str, Any]]] = {}
-_notifiers: dict[str, asyncio.Event] = {}
+from app.config import settings
+
+STREAM_MAXLEN = 1000
+STREAM_TTL_SECONDS = 3600
+
+_client: aioredis.Redis | None = None
 
 
-def init_job(job_id: str) -> None:
-    """Initialize event buffer for a job.  Call before spawning the task."""
-    _buffers[job_id] = []
-    _notifiers[job_id] = asyncio.Event()
+def _stream_key(job_id: str) -> str:
+    return f"job:{job_id}:events"
 
 
-def has_job(job_id: str) -> bool:
-    return job_id in _buffers
+def _get_redis() -> aioredis.Redis:
+    global _client
+    if _client is None:
+        _client = aioredis.from_url(settings.redis_url, decode_responses=True)
+    return _client
 
 
 async def publish_event(job_id: str, event: dict[str, Any]) -> None:
-    """Append an event to the job's buffer and wake waiting readers."""
+    """Append an event to the job's Redis Stream (XADD)."""
     event.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
-    buf = _buffers.get(job_id)
-    if buf is not None:
-        buf.append(event)
-    ev = _notifiers.get(job_id)
-    if ev is not None:
-        ev.set()
+    key = _stream_key(job_id)
+    r = _get_redis()
+    await r.xadd(key, {"data": json.dumps(event)}, maxlen=STREAM_MAXLEN)
+    await r.expire(key, STREAM_TTL_SECONDS)
 
 
 async def iter_events(
-    job_id: str, timeout: float = 5.0,
+    job_id: str, timeout_ms: int = 5000,
 ) -> AsyncIterator[dict[str, Any] | None]:
-    """Yield buffered + live events for a job.
+    """Yield events from the job's Redis Stream via XREAD BLOCK.
 
-    Starts from the head of the buffer so late-connecting clients catch
-    up.  Yields *None* after *timeout* seconds of inactivity (caller
-    should send a WS heartbeat).  Returns on terminal events.
+    Starts from id "0-0" so late-connecting clients replay the full
+    history.  Yields ``None`` after *timeout_ms* of inactivity (caller
+    should send a WS heartbeat).  Returns on terminal events
+    (``run_finished`` / ``run_error``).
     """
-    idx = 0
-    ev = _notifiers.get(job_id)
-    if ev is None:
-        return
-
+    key = _stream_key(job_id)
+    last_id = "0-0"
+    r = _get_redis()
     while True:
-        buf = _buffers.get(job_id, [])
-        while idx < len(buf):
-            event = buf[idx]
-            idx += 1
-            yield event
-            if event.get("type") in ("run_finished", "run_error"):
-                return
-        ev.clear()
-        try:
-            await asyncio.wait_for(ev.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
+        entries = await r.xread({key: last_id}, block=timeout_ms, count=100)
+        if not entries:
             yield None
-
-
-def cleanup_job(job_id: str) -> None:
-    """Remove the event buffer for a completed job."""
-    _buffers.pop(job_id, None)
-    _notifiers.pop(job_id, None)
+            continue
+        for _stream_name, messages in entries:
+            for msg_id, fields in messages:
+                last_id = msg_id
+                event = json.loads(fields["data"])
+                yield event
+                if event.get("type") in ("run_finished", "run_error"):
+                    return

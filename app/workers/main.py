@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from arq import cron
+from arq import cron, func
 from arq.connections import RedisSettings
 
 from app.config import settings
@@ -29,7 +29,7 @@ class WorkerSettings:
         run_validation,
         run_evolution_tier1,
         run_evolution_tier2,
-        run_explore,
+        func(run_explore, timeout=7200),
     ]
     on_startup = startup
     on_shutdown = shutdown
