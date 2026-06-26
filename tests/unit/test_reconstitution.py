@@ -259,6 +259,29 @@ class TestEventFeatures:
     def test_dsl_vocabulary_version_bumped(self):
         assert DSL_VOCABULARY_VERSION >= 2
 
+    def test_old_v1_spec_unaffected_by_version_bump(self):
+        """A spec using only v1 features must still parse and interpret after the v2 bump."""
+        v1_spec_raw = {
+            "id": "v1_compat", "version": 1, "tickers": ["AAPL"],
+            "thesis": "V1 spec uses only pre-v2 primitives",
+            "regime": {"all_of": [{"gt": ["sma(50)", "sma(200)"]}]},
+            "entry": {
+                "when": {"crosses_above": ["rsi(14)", 30]},
+                "action": "enter_long",
+                "sizing": {"fixed_pct": {"pct": 5.0}},
+            },
+            "exits": [{"stop_loss": {"atr_mult": 1.5}}],
+            "risk": {"max_position_pct": 5.0, "per_trade_stop_pct": 5.0,
+                     "max_gross_exposure": 40.0},
+        }
+        result = parse_spec(v1_spec_raw)
+        assert result.success, f"V1 spec should still parse after v2 bump: {result.errors}"
+
+        bars = _make_bars("2024-01-01", "2024-06-30")
+        signals = interpret(result.spec, bars)
+        assert len(signals) == len(bars), "V1 spec should interpret to same-length output"
+        assert "signal" in signals.columns
+
 
 # ---------------------------------------------------------------------------
 # 5. Interpreter parity

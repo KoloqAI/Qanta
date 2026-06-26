@@ -56,6 +56,40 @@ DELISTED = {
 }
 
 
+def _generate_sample_earnings(symbols: list[str]) -> list[dict]:
+    """Deterministic synthetic quarterly earnings calendar for testing.
+
+    Each symbol gets quarterly announcements (Jan/Apr/Jul/Oct) with a
+    seed-based day offset and BMO/AMC assignment.  Covers 2022-2025.
+    """
+    events: list[dict] = []
+    base_months = [1, 4, 7, 10]
+    for sym in symbols:
+        seed = int(hashlib.md5(sym.encode()).hexdigest()[:8], 16)
+        rng = np.random.default_rng(seed)
+        day_offsets = rng.integers(15, 28, size=len(base_months) * 4)
+        sessions = rng.choice(["BMO", "AMC"], size=len(base_months) * 4)
+        idx = 0
+        for year in range(2022, 2026):
+            for month in base_months:
+                day = int(day_offsets[idx % len(day_offsets)])
+                day = min(day, 28)
+                session = str(sessions[idx % len(sessions)])
+                announce_date = date(year, month, day)
+                events.append({
+                    "symbol": sym,
+                    "announce_date": announce_date,
+                    "session": session,
+                })
+                idx += 1
+    return events
+
+
+_SAMPLE_EARNINGS_EVENTS: list[dict] = _generate_sample_earnings(
+    SAMPLE_UNIVERSE + ["DELIST1", "DELIST2"]
+)
+
+
 def _seed_for_symbol(symbol: str) -> int:
     return int(hashlib.md5(symbol.encode()).hexdigest()[:8], 16)
 
@@ -160,6 +194,34 @@ class SampleDataProvider:
             if evt["final_list_date"] > as_of_d:
                 continue
             if evt["effective_date"] < start_d or evt["effective_date"] > end_d:
+                continue
+            results.append(dict(evt))
+        return results
+
+    async def earnings_events(
+        self,
+        symbol: str,
+        start: datetime,
+        end: datetime,
+        as_of: datetime | None = None,
+    ) -> list[dict]:
+        """Return earnings announcements for *symbol*, point-in-time.
+
+        Only returns events whose ``announce_date <= as_of`` (timestamps as
+        known then, never restated).  Each event includes a ``session`` flag
+        (``BMO`` or ``AMC``) that determines which bar shows the reaction.
+        """
+        as_of_d = as_of.date() if isinstance(as_of, datetime) and as_of else date(2099, 12, 31)
+        start_d = start.date() if isinstance(start, datetime) else start
+        end_d = end.date() if isinstance(end, datetime) else end
+
+        results: list[dict] = []
+        for evt in _SAMPLE_EARNINGS_EVENTS:
+            if evt["symbol"] != symbol:
+                continue
+            if evt["announce_date"] > as_of_d:
+                continue
+            if evt["announce_date"] < start_d or evt["announce_date"] > end_d:
                 continue
             results.append(dict(evt))
         return results
@@ -441,6 +503,26 @@ class PolygonDataProvider:
             "use SampleDataProvider for testing."
         )
 
+    async def earnings_events(
+        self,
+        symbol: str,
+        start: datetime,
+        end: datetime,
+        as_of: datetime | None = None,
+    ) -> list[dict]:
+        """Polygon earnings calendar via the /vX/reference/tickers endpoint.
+
+        V1: raises NotImplementedError.  Wire to Polygon's financials or
+        reference/tickers/{ticker}/events endpoint when the subscription
+        supports it, or use a dedicated earnings-calendar vendor.
+        """
+        raise NotImplementedError(
+            "Earnings calendar requires a Polygon subscription with "
+            "reference/financials access, or a dedicated earnings-date "
+            "vendor. Wire the provider method or use SampleDataProvider "
+            "for testing."
+        )
+
 
 def _empty_bars() -> pd.DataFrame:
     df = pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
@@ -488,16 +570,37 @@ def create_data_provider() -> Any:
 
 EVENT_FEATURES = frozenset({"is_index_add", "is_index_delete", "days_to_event"})
 
+RECONSTITUTION_FEATURES = frozenset({"is_index_add", "is_index_delete"})
+
+
+def _archetype_text(archetype: dict) -> str:
+    """Serialise the archetype's scan + template for keyword matching."""
+    import json as _json
+    return _json.dumps(archetype.get("scan", {})) + _json.dumps(archetype.get("template", {}))
+
 
 def _needs_event_enrichment(archetype: dict) -> bool:
     """Check if an archetype references event features in watches, scan, or template."""
-    import json as _json
-
     watches = archetype.get("watches", [])
     if any(w in EVENT_FEATURES for w in watches):
         return True
-    combined = _json.dumps(archetype.get("scan", {})) + _json.dumps(archetype.get("template", {}))
+    combined = _archetype_text(archetype)
     return any(feat in combined for feat in EVENT_FEATURES)
+
+
+def _needs_reconstitution(archetype: dict) -> bool:
+    watches = archetype.get("watches", [])
+    if any(w in RECONSTITUTION_FEATURES for w in watches):
+        return True
+    combined = _archetype_text(archetype)
+    return any(f in combined for f in RECONSTITUTION_FEATURES) or "russell_effective" in combined
+
+
+def _needs_earnings(archetype: dict) -> bool:
+    watches = archetype.get("watches", [])
+    if "days_to_event" not in watches:
+        return False
+    return "earnings" in _archetype_text(archetype)
 
 
 async def enrich_bars_if_needed(
@@ -511,17 +614,35 @@ async def enrich_bars_if_needed(
     if bars.empty or not _needs_event_enrichment(archetype):
         return bars
 
-    from app.modules.data.events import enrich_bars_with_events
+    from app.modules.data.events import enrich_bars_with_events, enrich_bars_with_earnings
 
-    try:
-        events = await provider.reconstitution_events(
-            index="russell_2000", as_of=as_of,
-        )
-    except (NotImplementedError, AttributeError):
-        events = []
+    if _needs_reconstitution(archetype):
+        recon_index = archetype.get("reconstitution_index", "russell_2000")
+        try:
+            events = await provider.reconstitution_events(
+                index=recon_index, as_of=as_of,
+            )
+        except (NotImplementedError, AttributeError):
+            events = []
+        if events:
+            enrich_bars_with_events(bars, ticker, events)
 
-    if events:
-        enrich_bars_with_events(bars, ticker, events)
+    if _needs_earnings(archetype):
+        start_dt = bars.index[0]
+        end_dt = bars.index[-1]
+        if isinstance(start_dt, pd.Timestamp):
+            start_dt = start_dt.to_pydatetime()
+        if isinstance(end_dt, pd.Timestamp):
+            end_dt = end_dt.to_pydatetime()
+        try:
+            earnings = await provider.earnings_events(
+                symbol=ticker, start=start_dt, end=end_dt, as_of=as_of,
+            )
+        except (NotImplementedError, AttributeError):
+            earnings = []
+        if earnings:
+            enrich_bars_with_earnings(bars, ticker, earnings)
+
     return bars
 
 
@@ -572,12 +693,14 @@ async def scan_universe(
 
     sem = asyncio.Semaphore(10)
 
-    needs_events = _needs_event_enrichment(archetype)
+    needs_recon = _needs_reconstitution(archetype)
+    needs_earn = _needs_earnings(archetype)
     recon_events: list[dict] | None = None
-    if needs_events:
+    if needs_recon:
+        recon_index = archetype.get("reconstitution_index", "russell_2000")
         try:
             recon_events = await provider.reconstitution_events(
-                index="russell_2000", as_of=as_of,
+                index=recon_index, as_of=as_of,
             )
         except (NotImplementedError, AttributeError):
             recon_events = []
@@ -594,6 +717,16 @@ async def scan_universe(
             if recon_events is not None and recon_events:
                 from app.modules.data.events import enrich_bars_with_events
                 enrich_bars_with_events(bars, ticker, recon_events)
+            if needs_earn:
+                from app.modules.data.events import enrich_bars_with_earnings
+                try:
+                    earn_evts = await provider.earnings_events(
+                        symbol=ticker, start=start, end=as_of, as_of=as_of,
+                    )
+                except (NotImplementedError, AttributeError):
+                    earn_evts = []
+                if earn_evts:
+                    enrich_bars_with_earnings(bars, ticker, earn_evts)
             try:
                 score = evaluate_scan_block(scan_block, bars)
             except Exception:

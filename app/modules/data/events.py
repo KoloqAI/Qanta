@@ -5,13 +5,20 @@ the interpreter remains pure: ``interpret(spec, bars) -> signals`` with no
 side-channel data.  The same enriched bars feed backtest and live paths,
 preserving parity.
 
-Columns added:
+Columns added (reconstitution):
   ``_is_index_add``   — 1.0 on dates where the symbol is a confirmed index
                         addition (from final list through effective date), 0.0 otherwise.
   ``_is_index_delete``— same for deletions.
   ``_days_to_<kind>_effective`` — business days until the next effective date
                         for events of the given kind visible at that bar's date.
                         NaN when no upcoming event is visible.
+
+Columns added (earnings):
+  ``_days_to_earnings`` — signed business-day distance to the nearest visible
+                          earnings announcement.  Negative = event in the past
+                          (e.g. -2 means two sessions ago), positive = future,
+                          0 = today.  NaN when no visible event within the
+                          lookback/lookahead window.
 """
 from __future__ import annotations
 
@@ -123,3 +130,65 @@ def _business_days_between(start: date, end: date) -> int:
         return 0
     bdays = pd.bdate_range(start=start, end=end)
     return max(0, len(bdays) - 1)
+
+
+def enrich_bars_with_earnings(
+    bars: pd.DataFrame,
+    symbol: str,
+    events: list[dict],
+) -> pd.DataFrame:
+    """Add earnings-event columns to *bars* in-place and return it.
+
+    Parameters
+    ----------
+    bars : DataFrame
+        OHLCV bars indexed by date.
+    symbol : str
+        The ticker whose bars these are (events are already filtered by the
+        provider, but we double-check).
+    events : list[dict]
+        Earnings events (already point-in-time filtered).  Each dict has:
+        ``symbol``, ``announce_date`` (date), ``session`` (``BMO`` or ``AMC``).
+
+    Columns produced
+    ----------------
+    ``_days_to_earnings`` : signed business-day distance to the nearest
+        visible earnings announcement.  Negative = past, positive = future,
+        0 = today.
+    """
+    if bars.empty:
+        return bars
+
+    n = len(bars)
+    days_col = np.full(n, np.nan)
+
+    bar_dates = bars.index.date if hasattr(bars.index, "date") else bars.index
+
+    sym_events = [e for e in events if e["symbol"] == symbol]
+    if not sym_events:
+        bars["_days_to_earnings"] = days_col
+        return bars
+
+    announce_dates = sorted(set(_to_date(e["announce_date"]) for e in sym_events))
+
+    for i, d in enumerate(bar_dates):
+        bd = _to_date(d)
+        best_dist: float | None = None
+
+        for ad in announce_dates:
+            if ad == bd:
+                best_dist = 0.0
+                break
+            elif ad < bd:
+                dist = -_business_days_between(ad, bd)
+            else:
+                dist = _business_days_between(bd, ad)
+
+            if best_dist is None or abs(dist) < abs(best_dist):
+                best_dist = float(dist)
+
+        if best_dist is not None:
+            days_col[i] = best_dist
+
+    bars["_days_to_earnings"] = days_col
+    return bars

@@ -1,0 +1,81 @@
+id: neglected_earnings_drift
+name: Neglected-name post-earnings drift
+family: behavioral_drift
+horizon: swing
+thesis: "Low-attention names under-react to earnings surprises; enter after a strong reaction and ride the first leg of the drift while neglect persists."
+watches: [close, volume, avg_volume, zscore, atr, days_to_event]
+
+regime:
+  all_of:
+    - { lt: ["avg_volume(20)", "{neglect_volume_ceiling}"] }
+    - { gt: ["avg_volume(20)", "{min_tradeable_volume}"] }
+    - { between: ["realized_vol(20)", 0.20, 0.90] }
+
+entry:
+  when:
+    all_of:
+      - { between: ["days_to_event(earnings)", -3, -1] }
+      - { gt: ["volume", { expr: "{vol_spike_mult} * avg_volume(20)" }] }
+      - { gt: ["zscore(20)", "{reaction_z}"] }
+  action: enter_long
+  sizing:
+    vol_scaled:
+      target_vol: 0.10
+
+exits:
+  - stop_loss:
+      atr_mult: "{stop_atr}"
+  - time_stop:
+      sessions: "{drift_sessions}"
+  - take_profit:
+      atr_mult: 3.0
+  - regime_break_exit: true
+
+risk:
+  per_trade_stop_pct: 5.0
+  max_position_pct: 5.0
+  max_gross_exposure: 40.0
+
+param_grid:
+  neglect_volume_ceiling: { min: 200000,  max: 800000,  step: 200000, default: 400000 }
+  min_tradeable_volume:   { min: 50000,   max: 150000,  step: 50000,  default: 100000 }
+  vol_spike_mult:         { min: 2.0,     max: 4.0,     step: 0.5,    default: 3.0 }
+  reaction_z:             { min: 1.0,     max: 2.5,     step: 0.5,    default: 1.5 }
+  stop_atr:               { min: 1.0,     max: 2.0,     step: 0.5,    default: 1.5 }
+  drift_sessions:         { min: 5,       max: 25,      step: 5,      default: 15 }
+
+scan:
+  all_of:
+    - { lt: ["avg_volume(20)", 800000] }
+    - { gt: ["days_to_event(earnings)", -4] }
+    - { lt: ["days_to_event(earnings)", 0] }
+
+peers_hint: sector_or_corr
+default_universe:
+  min_price: 3
+  min_dollar_volume: 300000
+  max_dollar_volume: 15000000
+
+persistence_thesis:
+  edge_type: behavioral
+  structural_reason: |
+    Investors under-react to earnings news; the correction is slow. In widely-covered names this is
+    arbitraged away within hours. In low-attention names (few/no analysts, low institutional ownership,
+    thin liquidity) under-reaction is larger and slower because there is little attention to incorporate
+    the news and arbitrage capital cannot fit (position too small, borrow costly/absent). The residual
+    drift is left for a small operator precisely because it is uninvestable at scale.
+  forced_counterparty: |
+    The neglected name's retail-heavy holder base, who anchor on stale expectations and incorporate the
+    surprise slowly; and the absence of the arbitrageurs who would otherwise close the gap.
+  death_condition:
+    - "avg_volume(20) > capacity_ceiling_usd"
+    - "avg_volume(20) spike sustained (attention arrived on the name)"
+  capacity_ceiling_usd: 15000000
+  monitorable_as_regime: true
+# TODO: Short-leg mirror (enter_short on strong negative reaction with lt zscore)
+# requires borrow-cost + availability modeling. Long-only V1; add short side
+# when IBKRBroker borrow integration is wired (M9).
+# TODO: Upgrade surprise proxy from zscore/volume reaction to real SUE
+# (standardized unexpected earnings) via an estimates vendor — Phase 2.
+# TODO: Upgrade neglect proxy from avg_volume to analyst-coverage count +
+# institutional-ownership % via a reference vendor — Phase 2.

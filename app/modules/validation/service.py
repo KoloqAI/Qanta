@@ -79,6 +79,7 @@ class ValidationHarnessImpl:
         provider=None,
         as_of=None,
         competing_returns: np.ndarray | None = None,
+        peers_hint: str | None = None,
     ) -> ValidationReport:
         bt = BacktesterImpl()
         result = await bt.run(spec, bars)
@@ -121,6 +122,9 @@ class ValidationHarnessImpl:
         peer_sufficient = peer_hit_result["sufficient"]
 
         # Gate checks — PBO gate skipped for single-config (DSR carries deflation)
+        # Peer gate skipped for event-specific families (peers_hint="none");
+        # see doc 13 peer-test note on cross-year cohort validation.
+        peer_gate_skipped = peers_hint == "none"
         gates = {
             "dsr": dsr >= self._dsr_threshold,
             "pbo": pbo <= self._pbo_threshold if pbo is not None else True,
@@ -132,9 +136,12 @@ class ValidationHarnessImpl:
                 else True
             ),
             "peer_hit": (
-                peer_hit >= self._peer_hit_threshold
-                if peer_sufficient
-                else False
+                True if peer_gate_skipped
+                else (
+                    peer_hit >= self._peer_hit_threshold
+                    if peer_sufficient
+                    else False
+                )
             ),
         }
         passed = all(gates.values())
@@ -160,6 +167,11 @@ class ValidationHarnessImpl:
                 "pbo_note": (
                     "single-config: PBO undefined, gate skipped; DSR+n_eff carry deflation"
                     if pbo is None else None
+                ),
+                "peer_hit_note": (
+                    "peers_hint=none: peer gate skipped — event-specific family; "
+                    "cross-year cohort validation replaces cross-sectional peer test"
+                    if peer_gate_skipped else None
                 ),
             },
         )

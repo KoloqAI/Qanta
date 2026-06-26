@@ -39,6 +39,11 @@ DSL vocabulary version 2: `eq` condition, `is_index_add`/`is_index_delete` event
 added to `MarketDataProvider`; `SampleDataProvider` includes deterministic synthetic calendar;
 `PolygonDataProvider` flags the feed gap. `forced_flow` family + `russell_reconstitution_drift`
 archetype added to the library.
+Earnings calendar: `earnings_events(symbol, start, end, as_of)` added to `MarketDataProvider` with
+BMO/AMC session flag and point-in-time filtering.  `SampleDataProvider` includes deterministic
+synthetic quarterly calendar (2022-2025). `days_to_event(earnings)` enrichment produces
+`_days_to_earnings` column (signed: negative = past, positive = future). `behavioral_drift` family
++ `neglected_earnings_drift` archetype added to the library.
 
 ## M5 — Execution skeleton + guardrails on paper (SAFETY-CRITICAL) ✅
 M6 ExecutionRuntime on nautilus_trader (same engine as M2 backtest → research-to-live parity) with PaperBroker / IBKRBroker (IB Gateway via IBeam, headless); M7 RiskGate as a mandatory pre-trade filter wrapping the engine; daily

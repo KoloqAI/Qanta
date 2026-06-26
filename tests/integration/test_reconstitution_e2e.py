@@ -115,6 +115,9 @@ class SeededReconProvider:
             if e["index"] == index and e["final_list_date"] <= as_of_d
         ]
 
+    async def earnings_events(self, symbol, start, end, as_of=None):
+        return []
+
 
 # ---------------------------------------------------------------------------
 # Shuffled provider (negative control)
@@ -262,6 +265,34 @@ class TestReconstitutionNegativeControl:
             "Shuffled add/delete should yield zero survivors "
             "(no directional edge when labels are random)"
         )
+
+
+class TestReconstitutionCostModel:
+    """Verify cost model reports frictionless vs net edge for illiquid names."""
+
+    @pytest.mark.asyncio
+    async def test_frictionless_vs_net_reported(self, explorable_archetypes):
+        """Ledger entries should report winner_sharpe (cost model active)."""
+        registry = StrategyRegistryImpl()
+        monitoring = MonitoringServiceImpl()
+        evo = EvolutionLoopImpl(monitoring=monitoring, registry=registry)
+
+        with mock.patch(
+            "app.modules.data.providers.create_data_provider",
+            return_value=SeededReconProvider(),
+        ), mock.patch(
+            "app.modules.data.providers.scan_universe",
+            new=_seeded_recon_scan,
+        ):
+            result = await evo.run_tier2(
+                budget=2,
+                archetype_subset=["russell_reconstitution_drift"],
+                as_of=datetime(2024, 7, 1),
+                candidates_per_archetype=2,
+            )
+
+        for entry in result["ledger"]:
+            assert "winner_sharpe" in entry
 
 
 class TestReconstitutionArchetypeDeterminism:

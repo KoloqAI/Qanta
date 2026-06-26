@@ -76,6 +76,7 @@ Each is a DSL template + scan + param grid following the schema above. Families 
 | time_microstructure | `time_of_day_bias`, `end_of_day_drift`, `intraday_momentum_continuation` | intraday |
 | cross_sectional | `pairs_statistical`, `sector_relative_strength` | swing |
 | forced_flow | `russell_reconstitution_drift` | swing |
+| behavioral_drift | `neglected_earnings_drift` | swing |
 | structural_filter | `earnings_proximity_filter`, `liquidity_regime_filter` | modifier (composes with any) |
 
 Notes: `structural_filter` archetypes are regime modifiers (e.g. `days_to_event` avoidance), not standalone
@@ -88,6 +89,20 @@ from index reconstitution, ETF rebalancing, or similar mandated trading.  Requir
 `SampleDataProvider` includes a deterministic synthetic calendar for testing; Polygon does not provide this
 data — a dedicated feed (FTSE Russell, ICE, or vendor) must be wired for production.  Entry is event-relative:
 conditioned on `is_index_add` + `days_to_event(russell_effective)` being within a window.
+
+**Behavioral-drift family** (`behavioral_drift`): archetypes that exploit slow information incorporation
+in neglected names.  `neglected_earnings_drift` enters after a strong earnings reaction (proxied by
+zscore + volume spike) in low-attention names and rides the first leg of post-earnings drift.  Requires
+an **earnings calendar** via `MarketDataProvider.earnings_events(symbol, start, end, as_of)`, point-in-time
+(announcements only visible once `announce_date <= as_of`).  Each event includes a `session` flag
+(`BMO`/`AMC`) that determines the reaction bar.  Entry is event-relative: conditioned on
+`days_to_event(earnings)` being in the [-3, -1] window (1-3 sessions post-announcement).  Neglect is
+proxied by low `avg_volume(20)`; the `death_condition` fires `regime_break_exit` when attention arrives
+(volume crosses the ceiling).  `SampleDataProvider` includes a deterministic synthetic quarterly earnings
+calendar; `PolygonDataProvider` requires a financials/reference subscription or dedicated vendor.
+V1 uses price-reaction proxy (zscore + volume spike) instead of analyst-estimate SUE data.
+**Upgrade path (Phase 2):** real SUE from an estimates vendor; analyst-coverage count + institutional
+ownership % from a reference vendor for a sharper neglect filter and death condition.
 
 **Peer-test note for forced_flow:** the standard correlation peer-hit gate assumes a repeatable cross-sectional
 pattern. Forced-flow is event-specific; the "peers" are *other reconstitution events across years*, not

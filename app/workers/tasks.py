@@ -337,6 +337,7 @@ async def run_explore(
             await emit({"type": "step_started", "step_id": val_step_id, "label": f"Validate {ticker}"})
 
             peer_tickers = [c["ticker"] for c in candidates if c["ticker"] != ticker][:5]
+            arch_peers_hint = archetype.get("peers_hint", "")
 
             try:
                 report = await harness.validate(
@@ -346,6 +347,7 @@ async def run_explore(
                     peer_tickers=peer_tickers if peer_tickers else None,
                     provider=provider,
                     as_of=as_of_dt,
+                    peers_hint=arch_peers_hint,
                 )
             except Exception:
                 ledger_entry["validation_passed"] = False

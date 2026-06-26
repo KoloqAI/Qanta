@@ -55,6 +55,7 @@ class TestLibraryLoader:
         expected = {
             "mean_reversion", "momentum_trend", "volatility",
             "time_microstructure", "cross_sectional", "structural_filter",
+            "behavioral_drift",
         }
         assert expected.issubset(families), f"Missing families: {expected - families}"
 
@@ -335,16 +336,22 @@ class TestPersistenceThesis:
         assert result["test_valid"]["status"] == "unexplored"
         assert result["test_valid"]["persistence_thesis"]["edge_type"] == "behavioral"
 
-    def test_seed_archetypes_excluded(self):
-        """Existing seed archetypes lack persistence_thesis — all excluded."""
+    def test_seed_archetypes_without_thesis_excluded(self):
+        """Seed archetypes lacking persistence_thesis are excluded; those with it load."""
         archetypes = load_archetypes(validate=True)
+        has_thesis = {"russell_reconstitution_drift", "neglected_earnings_drift"}
         for aid, a in archetypes.items():
-            assert a["status"] == "excluded", (
-                f"{aid}: expected excluded (no persistence_thesis), got {a['status']}"
-            )
-            assert "persistence_thesis" in a.get("exclusion_reason", ""), (
-                f"{aid}: expected 'persistence_thesis' in exclusion_reason"
-            )
+            if aid in has_thesis:
+                assert a["status"] == "unexplored", (
+                    f"{aid}: has persistence_thesis but got status {a['status']!r}"
+                )
+            else:
+                assert a["status"] == "excluded", (
+                    f"{aid}: expected excluded (no persistence_thesis), got {a['status']}"
+                )
+                assert "persistence_thesis" in a.get("exclusion_reason", ""), (
+                    f"{aid}: expected 'persistence_thesis' in exclusion_reason"
+                )
 
     def test_monitorable_false_no_dsl_ref_ok(self, tmp_path):
         """monitorable_as_regime=false doesn't require DSL-mappable death_conditions."""

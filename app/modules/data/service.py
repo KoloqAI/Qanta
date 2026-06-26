@@ -26,6 +26,14 @@ class MarketDataProvider(Protocol):
         end: datetime | None = None,
     ) -> list[dict]: ...
 
+    async def earnings_events(
+        self,
+        symbol: str,
+        start: datetime,
+        end: datetime,
+        as_of: datetime | None = None,
+    ) -> list[dict]: ...
+
 
 class FeatureStore(Protocol):
     async def compute_features(

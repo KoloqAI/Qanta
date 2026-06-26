@@ -73,6 +73,22 @@ FTSE Russell published reconstitution schedules/lists, or a vendor carrying inde
 `SampleDataProvider` includes a deterministic synthetic reconstitution calendar for testing (Russell 2000,
 two years of adds/deletes including delisted names for survivorship-free testing).
 
+### Earnings calendar (required new data feed)
+The `behavioral_drift` archetype family (doc 13) requires an **earnings announcement calendar** per ticker,
+point-in-time, with a **BMO/AMC** session flag (before market open vs after market close) that determines
+which bar shows the reaction.  Available via `MarketDataProvider.earnings_events(symbol, start, end, as_of)`;
+announcements are only revealed once `announce_date <= as_of` to prevent lookahead.
+
+**V1 surprise proxy:** instead of analyst-estimate SUE data, measure the earnings reaction directly from
+price/volume on the announcement bar (zscore of the close-to-close return + volume spike ratio).
+**Upgrade path (Phase 2):** real SUE from an estimates vendor → cleaner surprise signal.
+**V1 neglect proxy:** low `avg_volume(20)` as a proxy for "few analysts, low institutional ownership."
+**Upgrade path (Phase 2):** analyst-coverage count + institutional-ownership % from a reference vendor.
+
+`SampleDataProvider` includes a deterministic synthetic quarterly earnings calendar for all sample
+universe tickers + delisted names (2022-2025).  `PolygonDataProvider` requires a financials/reference
+subscription or a dedicated earnings-date vendor — the standard OHLCV plan does not include earnings dates.
+
 ## 7. Deferred (acknowledged, not built now)
 - **Tax/accounting export:** realized P&L, wash-sale flags, 1099 reconciliation, CSV/JSON export — post-live.
 - **LLM/data $-cost governor:** a monthly spend cap + alert in Settings (distinct from the statistical

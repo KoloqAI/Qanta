@@ -61,7 +61,7 @@ persistence_thesis:
   forced_counterparty: |
     Passive index funds forced to buy adds / sell deletes on the effective date irrespective of price.
   death_condition:
-    - "avg_volume(20) > capacity_ceiling_usd"
+    - "median_dollar_volume_20d > capacity_ceiling_usd"
     - "index methodology change (banding / multi-day phase-in) compresses the effect"
     - "announcement-to-effective drift spread compresses below cost"
   capacity_ceiling_usd: 25000000
